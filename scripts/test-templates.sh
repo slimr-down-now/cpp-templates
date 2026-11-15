@@ -26,7 +26,7 @@ for dir in "${template_dirs[@]}"; do
   tmp="$(mktemp -d)"
   tmp_dirs+=("$tmp")
   bun scripts/new.ts "$tmpl" fixture "$tmp" --port 10099
-  for rb in "$tmp"/Formula/*.rb; do
+  for rb in "$tmp"/Formula/*.rb "$tmp"/Casks/*.rb; do
     ruby -c "$rb" >/dev/null
   done
   platforms="$(just --justfile "$tmp/justfile" --evaluate platforms)"
