@@ -4,6 +4,7 @@
 #include <mcp_http.hpp>
 
 #include <cstring>
+#include <exception>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -17,7 +18,7 @@
  *   __NAME__ http [--host --port --skip-checks --log-file <path>]
  *   __NAME__ [--skip-checks] <tool> ['{"arg":"val"}']
  */
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) try {
     std::optional<std::string> logFile;
     std::vector<char *> filteredArgv;
     if (argc > 0 && argv != nullptr) {
@@ -77,4 +78,10 @@ int main(int argc, char *argv[]) {
     auto app = app::make_app();
     slimr::enable_http(app, slimr::HttpServerOptions{.port = __PORT__});
     return app.run(static_cast<int>(filteredArgv.size()), filteredArgv.data());
+} catch (const std::exception &e) {
+    std::cerr << "__NAME__: fatal: " << e.what() << "\n";
+    return 1;
+} catch (...) {
+    std::cerr << "__NAME__: fatal: unknown error\n";
+    return 1;
 }
