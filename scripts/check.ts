@@ -31,7 +31,7 @@ interface JustDump {
   };
 }
 
-const TEMPLATE_ASSIGNMENTS = ["llvm", "cxx", "triplet", "required", "log", "discover"] as const;
+const TEMPLATE_ASSIGNMENTS = ["llvm", "cxx", "triplet", "required", "log", "discover", "deps_env"] as const;
 
 const BEGIN_MARKER = "<!-- cpp-templates:begin -->";
 const END_MARKER = "<!-- cpp-templates:end -->";

@@ -8,7 +8,8 @@
     ".vscode/settings.json",
     "scripts/doctor.sh",
     "scripts/formula-shared.ts",
-    "scripts/release.ts"
+    "scripts/release.ts",
+    "triplets/x64-linux.cmake"
   ],
   "blocks": ["AGENTS.md"],
   "seed": [

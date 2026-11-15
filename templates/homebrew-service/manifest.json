@@ -9,7 +9,8 @@
     "scripts/doctor.sh",
     "scripts/formula-shared.ts",
     "scripts/release.ts",
-    "src/log_file.hpp"
+    "src/log_file.hpp",
+    "triplets/x64-linux.cmake"
   ],
   "blocks": ["AGENTS.md"],
   "seed": [
