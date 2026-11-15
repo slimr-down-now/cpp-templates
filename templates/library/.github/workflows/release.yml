@@ -90,6 +90,12 @@ jobs:
           else
             target="x64-linux"
           fi
+          if [ "${{ runner.os }}" = "macOS" ] && [ -d build/bin ]; then
+            if find build/bin -type f -perm -u+x -exec otool -L {} + | grep -F "$(brew --prefix)/"; then
+              echo "::error::macOS release binary must not link Homebrew libraries"
+              exit 1
+            fi
+          fi
           if [ "$kind" = "formula" ]; then
             if [ "${{ runner.os }}" = "Linux" ]; then
               if ldd build/bin/* | grep -q 'libc++\.so'; then
