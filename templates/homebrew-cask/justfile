@@ -1,0 +1,83 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set positional-arguments
+
+cask := "__NAME__"
+test_target := "__NAME___test"
+platforms := "macos"
+required := "brew cmake gh git jq just ninja vcpkg"
+llvm := env("LLVM_BIN", `brew --prefix llvm@23` + "/bin")
+cxx := env("CXX", if os() == "macos" { "/usr/bin/clang++" } else { llvm + "/clang++" })
+triplet := replace(replace(arch(), "aarch64", "arm64"), "x86_64", "x64") + if os() == "macos" { "-osx" } else { "-linux" }
+
+_:
+    @just --list
+
+# Compile the Release binary, sign it, zip it into dist/, then notarize (sign/notarize skip without identity env)
+build: (configure "Release")
+    cmake --build build/cmake/Release --parallel 2
+    just sign
+    rm -f "dist/{{ cask }}-arm64-macos.zip"
+    mkdir -p dist
+    ditto -c -k --norsrc "build/bin/{{ cask }}" "dist/{{ cask }}-arm64-macos.zip"
+    just notarize
+
+# Remove build output and release assets
+clean:
+    rm -rf build dist
+
+# Configure CMake (Debug enables ASan + UBSan)
+configure configuration="Debug": deps
+    CXX="{{ cxx }}" cmake -S . -B build/cmake/{{ configuration }} -G Ninja -DCMAKE_BUILD_TYPE={{ configuration }} -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_MANIFEST_MODE=OFF -DVCPKG_INSTALLED_DIR="{{ justfile_directory() }}/build/deps" -DVCPKG_TARGET_TRIPLET={{ triplet }} -DENABLE_SANITIZERS={{ if configuration == "Debug" { "ON" } else { "OFF" } }}
+
+# Install vcpkg dependencies into build/deps
+deps:
+    vcpkg install --x-wait-for-lock --triplet={{ triplet }} --x-install-root=build/deps
+
+# Check required tools, C++26 support and env vars, printing fixes
+doctor:
+    LLVM_BIN="{{ llvm }}" bash scripts/doctor.sh {{ required }}
+
+# Format C++ sources and this justfile
+fmt:
+    git ls-files -co --exclude-standard '*.cpp' '*.hpp' | xargs "{{ llvm }}/clang-format" -i
+    just --fmt --unstable
+
+# Clean-install the released cask from GitHub exactly as users do
+install: uninstall
+    brew tap bdombro/{{ cask }} https://github.com/bdombro/{{ cask }}
+    brew install --cask bdombro/{{ cask }}/{{ cask }}
+
+# Check formatting, then lint with clang-tidy
+lint: (configure "Debug")
+    git ls-files -co --exclude-standard '*.cpp' '*.hpp' | xargs "{{ llvm }}/clang-format" --dry-run --Werror
+    just --fmt --check --unstable
+    "{{ llvm }}/clang-tidy" -p build/cmake/Debug src/main.cpp
+
+# Submit the dist/ zip for notarization when NOTARIZE_PROFILE is set (notarytool keychain profile)
+notarize:
+    if [ -z "${NOTARIZE_PROFILE:-}" ]; then echo "NOTARIZE_PROFILE unset; skipping notarize"; exit 0; fi; xcrun notarytool submit "dist/{{ cask }}-arm64-macos.zip" --keychain-profile "$NOTARIZE_PROFILE" --wait
+
+# Release on GitHub (tests per platform, version bump, changelog, build, formula, tag), then pull the release commit
+release bump:
+    gh workflow run release.yml -f bump="$1"
+    sleep 5; id="$(gh run list --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"; if [ -t 1 ]; then gh run watch --compact --exit-status "$id"; else gh run watch --exit-status "$id" >/dev/null; fi || { gh run view "$id" --log-failed | tail -n 100; exit 1; }
+    git pull --ff-only
+
+# Codesign build/bin/<cask> with hardened runtime when CODESIGN_IDENTITY is set
+sign:
+    if [ -z "${CODESIGN_IDENTITY:-}" ]; then echo "CODESIGN_IDENTITY unset; skipping sign"; exit 0; fi; codesign --force --options runtime --timestamp --sign "$CODESIGN_IDENTITY" "build/bin/{{ cask }}"
+
+# Debug build with ASan + UBSan, then run all tests, or only doctest cases matching filter
+test filter="": (configure "Debug")
+    if [ -z "$1" ]; then cmake --build build/cmake/Debug --parallel 2 && BUGSINK_DSN= ctest --test-dir build/cmake/Debug --output-on-failure --no-tests=error; else cmake --build build/cmake/Debug --target {{ test_target }} --parallel 2 && BUGSINK_DSN= build/cmake/Debug/{{ test_target }} -tc="$1"; fi
+
+# Uninstall the cask and remove the tap
+uninstall:
+    brew uninstall --cask {{ cask }} || true
+    brew untap bdombro/{{ cask }} || true
+
+# Move vcpkg registry baselines to latest, then run tests (no commit)
+upgrade-deps:
+    git -C "$VCPKG_ROOT" pull --ff-only
+    vcpkg x-update-baseline --x-install-root=build/deps
+    just test

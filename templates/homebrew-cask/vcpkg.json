@@ -1,0 +1,7 @@
+{
+  "name": "__NAME__",
+  "description": "__DESC__",
+  "dependencies": [
+    "slimr-test"
+  ]
+}
