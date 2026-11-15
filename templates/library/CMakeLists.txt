@@ -17,9 +17,15 @@ option(ENABLE_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 
 add_library(app_options INTERFACE)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=libc++.so
+        OUTPUT_VARIABLE libcxx_so OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    cmake_path(GET libcxx_so PARENT_PATH libcxx_dir)
+    cmake_path(NORMAL_PATH libcxx_dir)
     string(APPEND CMAKE_REQUIRED_FLAGS " -stdlib=libc++")
+    list(APPEND CMAKE_REQUIRED_LINK_OPTIONS -L${libcxx_dir})
     target_compile_options(app_options INTERFACE -stdlib=libc++)
-    target_link_options(app_options INTERFACE -stdlib=libc++ $<$<CONFIG:Release>:-static-libstdc++>)
+    target_link_options(app_options INTERFACE -stdlib=libc++ -L${libcxx_dir}
+        $<$<CONFIG:Release>:-static-libstdc++> $<$<NOT:$<CONFIG:Release>>:-Wl$<COMMA>-rpath$<COMMA>${libcxx_dir}>)
 endif()
 target_compile_options(app_options INTERFACE -ftrivial-auto-var-init=zero)
 check_cxx_source_compiles("
@@ -32,7 +38,7 @@ check_cxx_source_compiles("
 #endif
 int main() { return 0; }" HAVE_LIBCPP_HARDENING)
 if(NOT HAVE_LIBCPP_HARDENING)
-    message(FATAL_ERROR "Use a Clang/libc++ toolchain supporting FAST hardening")
+    message(FATAL_ERROR "Use a Clang/libc++ toolchain supporting FAST hardening (the check also fails on link errors; see CMakeFiles/CMakeConfigureLog.yaml)")
 endif()
 target_compile_definitions(app_options INTERFACE
     _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
