@@ -39,12 +39,13 @@ runs:
 
     - name: Checkout vcpkg
       if: steps.vcpkg-ref.outputs.baseline != ''
-      uses: actions/checkout@v4
-      with:
-        repository: microsoft/vcpkg
-        ref: ${{ steps.vcpkg-ref.outputs.baseline }}
-        path: ${{ runner.temp }}/vcpkg
-        persist-credentials: false
+      shell: bash
+      run: |
+        rm -rf "$RUNNER_TEMP/vcpkg"
+        git init "$RUNNER_TEMP/vcpkg"
+        git -C "$RUNNER_TEMP/vcpkg" remote add origin https://github.com/microsoft/vcpkg.git
+        git -C "$RUNNER_TEMP/vcpkg" fetch --depth 1 origin "${{ steps.vcpkg-ref.outputs.baseline }}"
+        git -C "$RUNNER_TEMP/vcpkg" checkout --detach FETCH_HEAD
 
     - name: Bootstrap vcpkg
       if: steps.vcpkg-ref.outputs.baseline != ''
