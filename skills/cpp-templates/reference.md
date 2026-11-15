@@ -23,6 +23,7 @@ Each `templates/<name>/manifest.json` declares `{ verbatim, blocks, seed, recipe
 - `blocks` paths (`AGENTS.md`) must match only inside `<!-- cpp-templates:begin -->` and `<!-- cpp-templates:end -->`; everything outside is repository-owned
 - `seed` globs (`src/` except `src/log_file.hpp`, `tests/`, `README.md`, `CHANGELOG.md`, `.clang-tidy`) are copied once by `just new` and ignored by `just check`
 - `recipes` are checked per recipe via `just --dump --dump-format json`; template recipes must match, while repositories may add extra recipes or override variable values (`formula`, `endpoint`, `tools`, `test_target`, `platforms`)
+- `check_skip`: optional justfile variable holding whitespace-separated globs; `just check` skips matching `verbatim` paths and `recipes` names and prints each skipped item (unskipped mismatches still fail)
 
 ## Guides
 

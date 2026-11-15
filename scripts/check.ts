@@ -186,6 +186,12 @@ const sub = (input: string): string =>
     .replaceAll("__PORT__", port)
     .replaceAll("__DESC__", desc);
 
+const skipGlobs = (typeof assignments.check_skip?.value === "string" ? assignments.check_skip.value : "")
+  .split(/\s+/)
+  .filter(Boolean)
+  .map((pattern) => new Bun.Glob(pattern));
+const isSkipped = (item: string): boolean => skipGlobs.some((glob) => glob.match(item));
+
 const errors: string[] = [];
 
 for (const pattern of manifest.verbatim) {
@@ -197,6 +203,10 @@ for (const pattern of manifest.verbatim) {
   for (const rel of matches) {
     const expected = sub(readFileSync(path.join(templateDir, rel), "utf8"));
     const targetRel = sub(rel);
+    if (isSkipped(targetRel)) {
+      console.log(`skip (check_skip): ${targetRel}`);
+      continue;
+    }
     const targetPath = path.join(targetDir, targetRel);
     if (!existsSync(targetPath)) {
       errors.push(`missing verbatim file: ${targetRel}`);
@@ -274,6 +284,10 @@ if (!existsSync(templateJustfile)) {
   const tmplRecipes = templateDump.recipes ?? {};
   const tgtRecipes = targetDump.recipes ?? {};
   for (const recipeName of manifest.recipes) {
+    if (isSkipped(recipeName)) {
+      console.log(`skip (check_skip): ${recipeName}`);
+      continue;
+    }
     const expectedRecipe = tmplRecipes[recipeName];
     if (!expectedRecipe) {
       errors.push(`recipe listed in manifest missing from template justfile: ${recipeName}`);

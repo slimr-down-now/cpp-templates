@@ -297,4 +297,33 @@ describe("cpp-templates tooling", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("skips verbatim files and recipes listed in check_skip while printing skips", () => {
+    const root = makeFixtureRoot();
+    try {
+      const target = path.join(root, "out", "demo-app");
+      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+
+      rmSync(path.join(target, "config", "demo-app.txt"));
+      const justPath = path.join(target, "justfile");
+      const origJust = readFileSync(justPath, "utf8");
+      writeFileSync(
+        justPath,
+        `check_skip := "config/* hello"\n${origJust.replace("# Say hello\nhello:\n    echo \"hello {{formula}} at {{endpoint}}\"", "# Custom hello\nhello:\n    echo custom")}`,
+      );
+
+      const res = runScript("check.ts", ["fixture", target], root);
+      expect(res.exitCode).toBe(0);
+      expect(res.stdout).toContain("skip (check_skip): config/demo-app.txt");
+      expect(res.stdout).toContain("skip (check_skip): hello");
+
+      // Unskipped mismatch still fails
+      writeFileSync(path.join(target, ".clang-format"), "BasedOnStyle: Google\n");
+      const failRes = runScript("check.ts", ["fixture", target], root);
+      expect(failRes.exitCode).toBe(1);
+      expect(failRes.stderr).toContain(".clang-format");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
