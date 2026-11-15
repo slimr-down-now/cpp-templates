@@ -1,0 +1,11 @@
+{
+  "name": "__NAME__",
+  "description": "__DESC__",
+  "dependencies": [
+    {
+      "name": "slimr-mcp",
+      "features": ["http"]
+    },
+    "slimr-test"
+  ]
+}

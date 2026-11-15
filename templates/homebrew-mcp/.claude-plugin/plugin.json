@@ -1,0 +1,16 @@
+{
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "description": "__DESC__",
+  "author": {
+    "name": "Brian Dombrowski"
+  },
+  "homepage": "https://github.com/bdombro/__NAME__",
+  "repository": "https://github.com/bdombro/__NAME__",
+  "mcpServers": {
+    "__NAME__": {
+      "type": "http",
+      "url": "http://127.0.0.1:__PORT__/mcp"
+    }
+  }
+}

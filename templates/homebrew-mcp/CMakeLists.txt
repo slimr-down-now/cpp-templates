@@ -1,0 +1,72 @@
+cmake_minimum_required(VERSION 3.31)
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_SYSROOT)
+    execute_process(COMMAND xcrun --show-sdk-path
+        OUTPUT_VARIABLE CMAKE_OSX_SYSROOT OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY)
+endif()
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" APP_VERSION LIMIT_COUNT 1)
+string(STRIP "${APP_VERSION}" APP_VERSION)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION")
+project(__NAME__ VERSION "${APP_VERSION}" LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+include(CTest)
+include(CheckIPOSupported)
+include(CheckCXXSourceCompiles)
+option(ENABLE_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
+
+find_package(slimr-mcp CONFIG REQUIRED)
+
+add_library(app_options INTERFACE)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    string(APPEND CMAKE_REQUIRED_FLAGS " -stdlib=libc++")
+    target_compile_options(app_options INTERFACE -stdlib=libc++)
+    target_link_options(app_options INTERFACE -stdlib=libc++ $<$<CONFIG:Release>:-static-libstdc++>)
+endif()
+target_compile_options(app_options INTERFACE -ftrivial-auto-var-init=zero)
+check_cxx_source_compiles("
+#include <version>
+#ifndef _LIBCPP_VERSION
+#error libc++ is required for the selected hardening mode
+#endif
+#ifndef _LIBCPP_HARDENING_MODE_FAST
+#error libc++ FAST hardening is unavailable
+#endif
+int main() { return 0; }" HAVE_LIBCPP_HARDENING)
+if(NOT HAVE_LIBCPP_HARDENING)
+    message(FATAL_ERROR "Use a Clang/libc++ toolchain supporting FAST hardening")
+endif()
+target_compile_definitions(app_options INTERFACE
+    APP_VERSION="${PROJECT_VERSION}"
+    _LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
+if(ENABLE_SANITIZERS)
+    target_compile_options(app_options INTERFACE
+        -g -fsanitize=address,undefined -fno-sanitize-recover=undefined)
+    target_link_options(app_options INTERFACE -fsanitize=address,undefined)
+endif()
+check_ipo_supported(RESULT HAVE_IPO OUTPUT IPO_ERROR)
+if(NOT HAVE_IPO)
+    message(FATAL_ERROR "Release IPO is required: ${IPO_ERROR}")
+endif()
+
+add_executable(__NAME__ src/main.cpp)
+target_include_directories(__NAME__ PRIVATE src)
+target_link_libraries(__NAME__ PRIVATE slimr::mcp_http app_options)
+set_target_properties(__NAME__ PROPERTIES
+    INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
+    RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/build/bin")
+
+if(BUILD_TESTING)
+    find_package(slimr-test CONFIG REQUIRED)
+    add_executable(__NAME___test tests/test_main.cpp)
+    target_include_directories(__NAME___test PRIVATE src tests)
+    target_link_libraries(__NAME___test PRIVATE slimr::mcp_http slimr::test app_options)
+    set_target_properties(__NAME___test PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+    add_test(NAME __NAME__ COMMAND __NAME___test)
+    set_tests_properties(__NAME__ PROPERTIES TIMEOUT 120
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        ENVIRONMENT "BUGSINK_DSN=;TMPDIR=${CMAKE_BINARY_DIR}")
+endif()

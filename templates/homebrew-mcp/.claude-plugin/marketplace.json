@@ -1,0 +1,13 @@
+{
+  "name": "__NAME__",
+  "owner": {
+    "name": "Brian Dombrowski"
+  },
+  "plugins": [
+    {
+      "name": "__NAME__",
+      "source": ".",
+      "description": "__DESC__"
+    }
+  ]
+}
