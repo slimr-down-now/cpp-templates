@@ -25,7 +25,13 @@ interface JustRecipe {
 interface JustDump {
   assignments?: Record<string, JustAssignment>;
   recipes?: Record<string, JustRecipe>;
+  settings?: {
+    shell?: unknown;
+    positional_arguments?: unknown;
+  };
 }
+
+const TEMPLATE_ASSIGNMENTS = ["llvm", "cxx", "triplet", "required", "log", "discover"] as const;
 
 const BEGIN_MARKER = "<!-- cpp-templates:begin -->";
 const END_MARKER = "<!-- cpp-templates:end -->";
@@ -230,31 +236,58 @@ for (const rel of manifest.blocks) {
   }
 }
 
-if (manifest.recipes.length > 0) {
-  const templateJustfile = path.join(templateDir, "justfile");
-  if (!existsSync(templateJustfile)) {
+const templateJustfile = path.join(templateDir, "justfile");
+if (!existsSync(templateJustfile)) {
+  if (manifest.recipes.length > 0) {
     errors.push("missing template justfile");
-  } else {
-    const renderedJustfile = sub(readFileSync(templateJustfile, "utf8"));
-    const templateDump = dumpJustfile(["--justfile", "/dev/stdin"], renderedJustfile);
-    const tmplRecipes = templateDump.recipes ?? {};
-    const tgtRecipes = targetDump.recipes ?? {};
-    for (const recipeName of manifest.recipes) {
-      const expectedRecipe = tmplRecipes[recipeName];
-      if (!expectedRecipe) {
-        errors.push(`recipe listed in manifest missing from template justfile: ${recipeName}`);
-        continue;
-      }
-      const actualRecipe = tgtRecipes[recipeName];
-      if (!actualRecipe) {
-        errors.push(`missing recipe in ${targetJustfile}: ${recipeName}`);
-        continue;
-      }
-      const expJson = JSON.stringify(recipeShape(expectedRecipe), null, 2);
-      const actJson = JSON.stringify(recipeShape(actualRecipe), null, 2);
-      if (expJson !== actJson) {
-        errors.push(`recipe mismatch for '${recipeName}':\n${lineDiff(`recipe:${recipeName}`, expJson, actJson)}`);
-      }
+  }
+} else {
+  const renderedJustfile = sub(readFileSync(templateJustfile, "utf8"));
+  const templateDump = dumpJustfile(["--justfile", "/dev/stdin"], renderedJustfile);
+  const tmplAssignments = templateDump.assignments ?? {};
+  for (const key of TEMPLATE_ASSIGNMENTS) {
+    const expectedVar = tmplAssignments[key];
+    if (!expectedVar) continue;
+    const actualVar = assignments[key];
+    if (!actualVar) {
+      errors.push(`missing assignment in ${targetJustfile}: ${key}`);
+      continue;
+    }
+    const expJson = JSON.stringify(expectedVar.value, null, 2);
+    const actJson = JSON.stringify(actualVar.value, null, 2);
+    if (expJson !== actJson) {
+      errors.push(`assignment mismatch for '${key}':\n${lineDiff(`assignment:${key}`, expJson, actJson)}`);
+    }
+  }
+
+  for (const [label, key] of [
+    ["shell", "shell"],
+    ["positional-arguments", "positional_arguments"],
+  ] as const) {
+    const expJson = JSON.stringify(templateDump.settings?.[key] ?? null, null, 2);
+    const actJson = JSON.stringify(targetDump.settings?.[key] ?? null, null, 2);
+    if (expJson !== actJson) {
+      errors.push(`setting mismatch for '${label}':\n${lineDiff(`setting:${label}`, expJson, actJson)}`);
+    }
+  }
+
+  const tmplRecipes = templateDump.recipes ?? {};
+  const tgtRecipes = targetDump.recipes ?? {};
+  for (const recipeName of manifest.recipes) {
+    const expectedRecipe = tmplRecipes[recipeName];
+    if (!expectedRecipe) {
+      errors.push(`recipe listed in manifest missing from template justfile: ${recipeName}`);
+      continue;
+    }
+    const actualRecipe = tgtRecipes[recipeName];
+    if (!actualRecipe) {
+      errors.push(`missing recipe in ${targetJustfile}: ${recipeName}`);
+      continue;
+    }
+    const expJson = JSON.stringify(recipeShape(expectedRecipe), null, 2);
+    const actJson = JSON.stringify(recipeShape(actualRecipe), null, 2);
+    if (expJson !== actJson) {
+      errors.push(`recipe mismatch for '${recipeName}':\n${lineDiff(`recipe:${recipeName}`, expJson, actJson)}`);
     }
   }
 }

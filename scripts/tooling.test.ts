@@ -250,4 +250,51 @@ describe("cpp-templates tooling", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("enforces template-owned assignments and settings while ignoring per-repo vars", () => {
+    const root = makeFixtureRoot();
+    try {
+      const tmplJust = path.join(root, "templates", "fixture", "justfile");
+      const baseJust = [
+        'set shell := ["bash", "-eu", "-o", "pipefail", "-c"]',
+        "set positional-arguments",
+        "",
+        'formula := "__NAME__"',
+        'platforms := "macos linux"',
+        'llvm := env("LLVM_BIN", "/opt/homebrew/opt/llvm@23/bin")',
+        "",
+        "build:",
+        '    echo "building {{formula}}"',
+        "",
+        "hello:",
+        '    echo "hello {{formula}}"',
+        "",
+      ].join("\n");
+      writeFileSync(tmplJust, baseJust);
+
+      const target = path.join(root, "out", "demo-app");
+      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+
+      // Mutating per-repo var `platforms` stays clean
+      const targetJust = path.join(target, "justfile");
+      const origTarget = readFileSync(targetJust, "utf8");
+      writeFileSync(targetJust, origTarget.replace('platforms := "macos linux"', 'platforms := "macos"'));
+      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+
+      // Mutating template-owned `llvm` fails naming `llvm`
+      writeFileSync(targetJust, origTarget.replace("llvm@23", "llvm@22"));
+      let res = runScript("check.ts", ["fixture", target], root);
+      expect(res.exitCode).toBe(1);
+      expect(res.stderr).toContain("llvm");
+
+      // Mutating `set shell` fails naming `shell`
+      writeFileSync(targetJust, origTarget.replace('"-eu", "-o", "pipefail", ', ""));
+      res = runScript("check.ts", ["fixture", target], root);
+      expect(res.exitCode).toBe(1);
+      expect(res.stderr).toContain("shell");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
