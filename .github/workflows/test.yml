@@ -14,11 +14,25 @@ jobs:
       - uses: extractions/setup-just@v3
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
-      - name: Setup C++ toolchain
+      - name: Install macOS toolchain
+        if: runner.os == 'macOS' && hashFiles('templates/*/justfile') != ''
+        run: brew install llvm@23 ninja jq
+      - name: Install Linux toolchain
+        if: runner.os == 'Linux' && hashFiles('templates/*/justfile') != ''
+        run: |
+          /home/linuxbrew/.linuxbrew/bin/brew install llvm@23 ninja jq
+          echo "/home/linuxbrew/.linuxbrew/bin" >> "$GITHUB_PATH"
+          echo "/home/linuxbrew/.linuxbrew/sbin" >> "$GITHUB_PATH"
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          {
+            echo "HOMEBREW_PREFIX=$HOMEBREW_PREFIX"
+            echo "HOMEBREW_CELLAR=$HOMEBREW_CELLAR"
+            echo "HOMEBREW_REPOSITORY=$HOMEBREW_REPOSITORY"
+          } >> "$GITHUB_ENV"
+      - name: Setup vcpkg
         if: hashFiles('templates/*/justfile') != ''
         run: |
-          brew install llvm@23 ninja jq
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          git clone --filter=blob:none https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
           "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
           echo "VCPKG_DEFAULT_BINARY_CACHE=$RUNNER_TEMP/vcpkg-cache" >> "$GITHUB_ENV"
