@@ -15,6 +15,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+case "$(uname -s)" in
+  Darwin) current_os="macos" ;;
+  Linux) current_os="linux" ;;
+  *) current_os="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+esac
+
 for dir in "${template_dirs[@]}"; do
   tmpl="$(basename "$dir")"
   tmp="$(mktemp -d)"
@@ -23,6 +29,12 @@ for dir in "${template_dirs[@]}"; do
   for rb in "$tmp"/Formula/*.rb; do
     ruby -c "$rb" >/dev/null
   done
+  platforms="$(just --justfile "$tmp/justfile" --evaluate platforms)"
+  if [[ " $platforms " != *" $current_os "* ]]; then
+    echo "skip $tmpl: platforms=$platforms"
+    bun scripts/check.ts "$tmpl" "$tmp"
+    continue
+  fi
   git -C "$tmp" init -q
   BUGSINK_DSN="" just --justfile "$tmp/justfile" --working-directory "$tmp" test
   just --justfile "$tmp/justfile" --working-directory "$tmp" lint
