@@ -18,7 +18,10 @@ trap cleanup EXIT
 case "$(uname -s)" in
   Darwin) current_os="macos" ;;
   Linux) current_os="linux" ;;
-  *) current_os="$(uname -s | tr '[:upper:]' '[:lower:]')" ;;
+  *)
+    echo "test-templates: unsupported OS: $(uname -s)" >&2
+    exit 1
+    ;;
 esac
 
 for dir in "${template_dirs[@]}"; do
@@ -30,7 +33,26 @@ for dir in "${template_dirs[@]}"; do
     ruby -c "$rb" >/dev/null
   done
   platforms="$(just --justfile "$tmp/justfile" --evaluate platforms)"
-  if [[ " $platforms " != *" $current_os "* ]]; then
+  read -ra platform_tokens <<< "$platforms"
+  if (( ${#platform_tokens[@]} == 0 )); then
+    echo "test-templates: $tmpl: platforms justfile variable must not be empty" >&2
+    exit 1
+  fi
+  has_current=false
+  for p in "${platform_tokens[@]}"; do
+    case "$p" in
+      macos|linux)
+        if [[ "$p" == "$current_os" ]]; then
+          has_current=true
+        fi
+        ;;
+      *)
+        echo "test-templates: $tmpl: unknown platform \"$p\" in platforms" >&2
+        exit 1
+        ;;
+    esac
+  done
+  if [[ "$has_current" != true ]]; then
     echo "skip $tmpl: platforms=$platforms"
     bun scripts/check.ts "$tmpl" "$tmp"
     continue
