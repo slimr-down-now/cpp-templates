@@ -9,6 +9,7 @@
     "scripts/doctor.sh",
     "scripts/formula-shared.ts",
     "scripts/release.ts",
+    "triplets/arm64-osx.cmake",
     "triplets/x64-linux.cmake"
   ],
   "blocks": [

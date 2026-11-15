@@ -10,6 +10,7 @@
     "scripts/formula-shared.ts",
     "scripts/release.ts",
     "src/log_file.hpp",
+    "triplets/arm64-osx.cmake",
     "triplets/x64-linux.cmake"
   ],
   "blocks": ["AGENTS.md"],
