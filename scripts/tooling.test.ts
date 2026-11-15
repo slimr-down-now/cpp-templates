@@ -225,4 +225,29 @@ describe("cpp-templates tooling", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("ignores inline block markers in prose during sync and check", () => {
+    const root = makeFixtureRoot();
+    try {
+      const block = [
+        "<!-- cpp-templates:begin -->",
+        "Keep rules outside `<!-- cpp-templates:begin -->` and `<!-- cpp-templates:end -->`.",
+        "<!-- cpp-templates:end -->",
+      ].join("\n");
+      writeFileSync(path.join(root, "base", "AGENTS.md"), `# Base\n\n${block}\n`);
+      writeFileSync(
+        path.join(root, "templates", "fixture", "AGENTS.md"),
+        "# Repo\n\n<!-- cpp-templates:begin -->\nold\n<!-- cpp-templates:end -->\n\nKeep me.\n",
+      );
+
+      expect(runScript("sync.ts", [], root).exitCode).toBe(0);
+      expect(runScript("sync.ts", ["--check"], root).exitCode).toBe(0);
+
+      const target = path.join(root, "out", "demo-app");
+      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });

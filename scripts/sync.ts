@@ -19,14 +19,17 @@ function die(msg: string): never {
 }
 
 function findBlockRange(text: string): { start: number; end: number } | null {
-  const firstBegin = text.indexOf(BEGIN_MARKER);
-  const lastBegin = text.lastIndexOf(BEGIN_MARKER);
-  const firstEnd = text.indexOf(END_MARKER);
-  const lastEnd = text.lastIndexOf(END_MARKER);
-  if (firstBegin === -1 || firstEnd === -1 || firstBegin !== lastBegin || firstEnd !== lastEnd || firstBegin >= firstEnd) {
+  const begins = [...text.matchAll(/^<!-- cpp-templates:begin -->$/gm)];
+  const ends = [...text.matchAll(/^<!-- cpp-templates:end -->$/gm)];
+  if (begins.length !== 1 || ends.length !== 1) {
     return null;
   }
-  return { start: firstBegin, end: firstEnd + END_MARKER.length };
+  const start = begins[0].index!;
+  const end = ends[0].index! + ends[0][0].length;
+  if (start >= end) {
+    return null;
+  }
+  return { start, end };
 }
 
 const args = process.argv.slice(2);

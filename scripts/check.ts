@@ -52,17 +52,17 @@ function lineDiff(label: string, expected: string, actual: string): string {
 }
 
 function extractBlock(text: string): { ok: true; block: string } | { ok: false; error: string } {
-  const firstBegin = text.indexOf(BEGIN_MARKER);
-  const lastBegin = text.lastIndexOf(BEGIN_MARKER);
-  const firstEnd = text.indexOf(END_MARKER);
-  const lastEnd = text.lastIndexOf(END_MARKER);
-  if (firstBegin === -1 || firstEnd === -1) {
+  const begins = [...text.matchAll(/^<!-- cpp-templates:begin -->$/gm)];
+  const ends = [...text.matchAll(/^<!-- cpp-templates:end -->$/gm)];
+  if (begins.length === 0 || ends.length === 0) {
     return { ok: false, error: `missing ${BEGIN_MARKER} or ${END_MARKER}` };
   }
-  if (firstBegin !== lastBegin || firstEnd !== lastEnd || firstBegin >= firstEnd) {
+  if (begins.length !== 1 || ends.length !== 1 || begins[0].index! >= ends[0].index!) {
     return { ok: false, error: "malformed or duplicate cpp-templates block markers" };
   }
-  return { ok: true, block: text.slice(firstBegin, firstEnd + END_MARKER.length) };
+  const start = begins[0].index!;
+  const end = ends[0].index! + ends[0][0].length;
+  return { ok: true, block: text.slice(start, end) };
 }
 
 function dumpJustfile(args: string[], stdin?: string): JustDump {
