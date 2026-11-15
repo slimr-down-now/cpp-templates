@@ -30,7 +30,7 @@ jobs:
       - id: plan
         run: |
           version="$(bun scripts/release.ts next "${{ inputs.bump }}")"
-          runners="$(just --evaluate platforms | jq -Rc 'split(" ") | map(select(length > 0) | {macos: "macos-15", linux: "ubuntu-24.04"}[.] // error("unknown platform: \(.)"))')"
+          runners="$(just --evaluate platforms | jq -Rc 'split(" ") | map(select(length > 0) | {macos: "macos-26", linux: "ubuntu-24.04"}[.] // error("unknown platform: \(.)"))')"
           shopt -s nullglob
           formulas=(Formula/*.rb)
           casks=(Casks/*.rb)
