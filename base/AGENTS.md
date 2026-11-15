@@ -28,11 +28,11 @@ Align this repository via the `cpp-templates` skill (`just check <template> .`).
 - Prefer values over pointers, `const` by default, and no raw `new`/`delete`.
 - Use `std::expected` for expected failures; use exceptions only at process and callback boundaries.
 - Structure code with one folder per feature under `src/`, mirrored under `tests/`. Keep one test TU per executable (`tests/test_main.cpp`).
-- Name what you use (`using slimr::Json;` or `slimr::Json`, never `using namespace`).
+- Name what you use (`using slimr::Json;` or `slimr::Json`, never `using namespace`). Use PascalCase for types and camelCase for functions and variables (review guidance, not lint).
 - Put file-local helpers in an unnamed namespace in `.cpp` files, or in `detail::` in headers.
 - Follow KISS: inline single-use helpers, avoid speculative abstractions, keep diffs lean.
 - Apply style rules to new and touched code; ports do not rewrite working code just for style.
-- `.clang-tidy` enforces `bugprone-*`, `performance-*`, selected `modernize-*`, `readability-identifier-naming` (PascalCase types, camelCase functions and variables), and `google-build-using-namespace`; fix findings or suppress inline with a reason.
+- `.clang-tidy` enforces bug-finding checks (`clang-analyzer-core.*`, `clang-analyzer-cplusplus.*`, and bug-risk `bugprone-*` checks; pending legacy findings are temporarily disabled with per-check counts in `.clang-tidy`); fix findings or suppress inline with a reason.
 - `INTERFACE_SOURCES` caveat: linking a header-only library that ships an implementation TU (such as `slimr-yaml`) into both a library and an executable that links that library compiles the TU twice and causes duplicate symbols.
 
 ## Testing
@@ -45,7 +45,7 @@ Iterate with `just test "<case>"` (Debug build with ASan + UBSan, `BUGSINK_DSN="
 - `homebrew-*`: `install`, `uninstall`
 - `homebrew-service` and `homebrew-mcp`: `daemon-logs`, `daemon-restart`, `daemon-start`, `daemon-status`, `daemon-stop`
 - `homebrew-mcp`: `test-mcp`
-- Dropped tooling (do not re-add): `run`, `install-local`, `reinstall-local`, `install-github`, `publish-local`, `--dry-run`, `VCPKG_OVERLAY_PORTS`, `check-formula`, `dev-formula.*`, `homebrew.mjs`
+- Dropped tooling (do not re-add): foreground runner, local tap/overlay symlinking, GitHub-branch/local-publish/dry-run helpers, standalone formula check, and JS formula helpers
 
 ## Changelog
 
