@@ -43,11 +43,12 @@ Delete legacy local-linking and release machinery:
 - Switch `vcpkg-configuration.json` to `slimr-*` git registries (including transitive `slimr-*` dependencies) and run `just upgrade-deps`
 - Move XDG paths (`~/.local/share/...`, `~/.local/state/...`, `~/.config/...`) to `$(brew --prefix)/var/<name>` and `$(brew --prefix)/etc/<name>/` (always using the formula name, never a short XDG name); move secrets into env vars (`$(brew --prefix)/etc/<name>/env` for services)
 - Wire `src/log_file.hpp` and `--log-file`, compile `VERSION` into `--version` and Bugsink `release`, bind `0.0.0.0` by default on `http`, and wire the `PluginApp` env check with `--skip-checks`
-- Fix widened `.clang-tidy` findings in their own commit (or suppress inline with a reason)
+- Keep `just lint` green by disabling `.clang-tidy` checks with findings under a commented `Pending lint follow-ups` list with per-check counts; fix them later, one check per reviewed commit
 - Seed `CHANGELOG.md` with `## Unreleased` and a line for the port
 
 ## Update docs and verify snapshots
 
+- Split port history into single-purpose commits: `style: clang-format` first, then non-behavior docs/tooling, then one commit per behavior change with its tests
 - Restructure `README.md` end-user first (what it does, install, usage, env var table, then links to `docs/`)
 - Move contributor workflow to `docs/development.md` (direct binary dev loop on port `2000N`, `just release`, explicit-URL tap, dropped recipes)
-- Run `just build`, `just test`, `just lint`, `just test-mcp` (for `homebrew-mcp`), and verify `tools/list`, `resources/list`, and doctest case count match the pre-port snapshot
+- Run `just build`, `just test`, `just lint`, `just test-mcp` (for `homebrew-mcp`), and verify `tools/list`, `resources/list`, and doctest case count match the pre-port snapshot; reviewers also run a base-vs-ported regression gate on temp worktrees
