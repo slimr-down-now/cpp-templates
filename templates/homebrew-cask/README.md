@@ -23,6 +23,12 @@ __NAME__ hello [name]
 __NAME__ --help
 ```
 
+## Environment Variables
+
+| Name | Required | Purpose |
+| --- | --- | --- |
+| *(none)* | — | — |
+
 ## Development
 
 See [docs/development.md](docs/development.md) for local builds, testing, and releases.

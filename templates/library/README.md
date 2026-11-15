@@ -43,3 +43,9 @@ just release patch   # Trigger release workflow and pull tag commit
 ```
 
 Extra test targets go in `CMakeLists.txt` (`add_executable` and `add_test`): unfiltered `just test` runs all via `ctest`, while `just test "<case>"` runs only `test_target`.
+
+## Environment Variables
+
+| Name | Required | Purpose |
+| --- | --- | --- |
+| *(none)* | — | — |
