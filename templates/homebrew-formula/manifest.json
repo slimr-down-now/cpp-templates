@@ -1,0 +1,45 @@
+{
+  "verbatim": [
+    ".clang-format",
+    ".clangd",
+    ".github/actions/setup/action.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/test.yml",
+    ".vscode/settings.json",
+    "scripts/doctor.sh",
+    "scripts/formula-shared.ts",
+    "scripts/release.ts"
+  ],
+  "blocks": ["AGENTS.md"],
+  "seed": [
+    ".clang-format-ignore",
+    ".clang-tidy",
+    ".gitignore",
+    "CHANGELOG.md",
+    "CMakeLists.txt",
+    "Formula/**",
+    "LICENSE",
+    "README.md",
+    "VERSION",
+    "docs/**",
+    "src/**",
+    "tests/**",
+    "vcpkg-configuration.json",
+    "vcpkg.json"
+  ],
+  "recipes": [
+    "_",
+    "build",
+    "clean",
+    "configure",
+    "deps",
+    "doctor",
+    "fmt",
+    "install",
+    "lint",
+    "release",
+    "test",
+    "uninstall",
+    "upgrade-deps"
+  ]
+}
