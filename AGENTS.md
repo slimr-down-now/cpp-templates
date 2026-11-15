@@ -19,7 +19,7 @@ Each `templates/<name>/manifest.json` declares `{ "verbatim": [globs], "blocks":
 
 ## Placeholders and domain-free rule
 
-- Only three placeholders are substituted: `__NAME__`, `__PORT__`, and `__DESC__`.
+- Three input placeholders are substituted (`__NAME__`, `__PORT__`, `__DESC__`), plus derived `__CLASS__` (Homebrew formula class from `__NAME__`).
 - Keep the `<!-- cpp-templates:begin -->` .. `<!-- cpp-templates:end -->` block in `base/AGENTS.md` placeholder-free (use `<name>`, `<template>`, `<bin>`) so `just check` matches across all five templates.
 - Keep templates domain-free: hello-world seeds only, with no app-specific assumptions or extra dependencies.
 

@@ -168,8 +168,17 @@ const name = nameOverride ?? inferName(targetDir, assignments);
 const port = portOverride ?? inferPort(assignments);
 const desc = descOverride ?? name;
 
+const className = (name.charAt(0).toUpperCase() + name.slice(1).toLowerCase())
+  .replace(/[-_.\s]([a-zA-Z0-9])/g, (_, ch: string) => ch.toUpperCase())
+  .replaceAll("+", "x")
+  .replace(/(.)@(\d)/, "$1AT$2");
+
 const sub = (input: string): string =>
-  input.replaceAll("__NAME__", name).replaceAll("__PORT__", port).replaceAll("__DESC__", desc);
+  input
+    .replaceAll("__NAME__", name)
+    .replaceAll("__CLASS__", className)
+    .replaceAll("__PORT__", port)
+    .replaceAll("__DESC__", desc);
 
 const errors: string[] = [];
 

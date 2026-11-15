@@ -14,9 +14,10 @@ Run from `~/dev/bdombro/cpp-templates`:
 just new <template> <name> <path>
 ```
 
-`<name>` is always the Homebrew formula or package name (for example `gdocsmith-mcp` or `slimr-json`), never a short XDG name. `just new` substitutes three placeholders across the template tree:
+`<name>` is always the Homebrew formula or package name (for example `gdocsmith-mcp` or `slimr-json`), never a short XDG name. `just new` substitutes three input placeholders (plus derived `__CLASS__`) across the template tree:
 
 - `__NAME__` — formula or package name
+- `__CLASS__` — derived Homebrew formula class name from `__NAME__`
 - `__PORT__` — HTTP port (for `homebrew-mcp`, `10001`..`10008` in production, `2000N` for local dev runs)
 - `__DESC__` — short one-line description
 

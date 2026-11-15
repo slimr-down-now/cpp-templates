@@ -192,4 +192,37 @@ describe("cpp-templates tooling", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("derives __CLASS__ from __NAME__ in new and check", () => {
+    const root = makeFixtureRoot();
+    try {
+      const tmplDir = path.join(root, "templates", "fixture");
+      mkdirSync(path.join(tmplDir, "Formula"), { recursive: true });
+      writeFileSync(path.join(tmplDir, "Formula", "__NAME__.rb"), "class __CLASS__ < Formula\nend\n");
+      const manifest = JSON.parse(readFileSync(path.join(tmplDir, "manifest.json"), "utf8")) as {
+        verbatim: string[];
+        blocks: string[];
+        seed: string[];
+        recipes: string[];
+      };
+      manifest.verbatim.push("Formula/__NAME__.rb");
+      writeFileSync(path.join(tmplDir, "manifest.json"), JSON.stringify(manifest));
+
+      for (const [pkg, expectedClass] of [
+        ["gdocsmith-mcp", "GdocsmithMcp"],
+        ["fixture", "Fixture"],
+        ["foo_bar.baz", "FooBarBaz"],
+        ["foo+bar@2", "FooxbarAT2"],
+      ]) {
+        const target = path.join(root, "out", pkg);
+        expect(runScript("new.ts", ["fixture", pkg, target], root).exitCode).toBe(0);
+        expect(readFileSync(path.join(target, "Formula", `${pkg}.rb`), "utf8")).toBe(
+          `class ${expectedClass} < Formula\nend\n`,
+        );
+        expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
