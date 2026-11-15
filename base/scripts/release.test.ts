@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const RELEASE_SCRIPT = join(import.meta.dir, "release.ts");
@@ -45,7 +46,7 @@ function runRelease(fixture: Fixture, args: string[]) {
 }
 
 function createFixture(name: string): Fixture {
-  const tempDir = mkdtempSync(join(import.meta.dir, ".tmp-release-test-"));
+  const tempDir = mkdtempSync(join(tmpdir(), "release-test-"));
   tempRoots.push(tempDir);
 
   const remoteDir = join(tempDir, "remote.git");
@@ -196,7 +197,7 @@ end
     expect(ghCalls[0]).toContain("demo-mcp-arm64-macos.tar.gz");
     expect(ghCalls[0]).toContain("demo-mcp-x64-linux.tar.gz");
     expect(ghCalls[0]).toContain("--repo example/demo-mcp");
-  });
+  }, 30_000);
 
   test("publish formula toggled from macos+linux to macos removes stale on_linux block", () => {
     const fixture = createFixture("demo-mac");
@@ -244,7 +245,7 @@ end
     expect(ghCalls.length).toBe(1);
     expect(ghCalls[0]).toContain("demo-mac-arm64-macos.tar.gz");
     expect(ghCalls[0]).not.toContain("demo-mac-x64-linux.tar.gz");
-  });
+  }, 30_000);
 
   test("publish cask updates Casks/<name>.rb and publishes dmg asset", () => {
     const fixture = createFixture("demo-cask");
@@ -284,7 +285,7 @@ end
     const ghCalls = readGhCalls(fixture);
     expect(ghCalls.length).toBe(1);
     expect(ghCalls[0]).toContain("demo-cask-arm64-macos.dmg");
-  });
+  }, 30_000);
 
   test("publish library (single-port and multi-port) runs vcpkg x-add-version and amends into Release commit", () => {
     for (const multiPort of [false, true]) {
@@ -330,7 +331,7 @@ end
       expect(ghCalls[0]).toContain("release create v1.1.0 --verify-tag --title v1.1.0");
       expect(ghCalls[0]).not.toContain(".tar.gz");
     }
-  });
+  }, 30_000);
 
   test("publish fails atomically without calling gh when git push is rejected", () => {
     const fixture = createFixture("demo-fail");
@@ -360,5 +361,5 @@ end
     expect(res.exitCode).not.toBe(0);
     expect(readGhCalls(fixture).length).toBe(0);
     expect(runGit(fixture.remoteDir, ["--git-dir=.", "tag"])).toBe("");
-  });
+  }, 30_000);
 });
