@@ -4,12 +4,12 @@ __DESC__
 
 ## Install
 
-Add `bdombro/__NAME__` to `vcpkg-configuration.json`:
+Add `slimr-down-now/<repo>` to `vcpkg-configuration.json`:
 
 ```json
 {
   "kind": "git",
-  "repository": "https://github.com/bdombro/__NAME__",
+  "repository": "https://github.com/slimr-down-now/<repo>",
   "baseline": "<commit-sha>",
   "packages": [
     "__NAME__"
