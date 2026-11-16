@@ -19,8 +19,8 @@ Every template supports `platforms := "macos linux"` by default. Set `platforms 
 
 ## Toolchain and static libc++
 
-- Linux builds use Homebrew `llvm@23` (`LLVM_BIN` and `CXX`), while macOS uses `/usr/bin/clang++` (`CXX` overrides both)
-- Linux Release binaries link `libc++` statically so `ldd build/bin/<name>` has no dynamic `libc++.so` dependency
+- Both macOS and Linux builds use Homebrew `llvm@23` (`LLVM_BIN` and `CXX`, overridable via `CXX`)
+- Release binaries link `libc++` statically on both platforms (`ldd build/bin/<name>` has no `libc++.so` on Linux; `otool -L` has no `libc++.1.dylib` or Homebrew dylibs and `nm -gU` is empty on macOS)
 
 ## Services and lingering
 
@@ -32,4 +32,4 @@ loginctl enable-linger "$USER"
 
 ## Doctor and install
 
-`just doctor` checks required tools on `PATH`, `-std=c++26` compilation, `llvm@23` `clang-format` and `clang-tidy` in `LLVM_BIN`, `VCPKG_ROOT`, and `loginctl enable-linger` on Linux. Once green, run root `just install` to tap, install, test, and start enabled services.
+`just doctor` checks required tools on `PATH`, `-std=c++26 -stdlib=libc++` compilation, `llvm@23` `clang-format` and `clang-tidy` in `LLVM_BIN`, static `libc++.a`/`libc++abi.a` on macOS, `VCPKG_ROOT`, and `loginctl enable-linger` on Linux. Once green, run root `just install` to tap, install, test, and start enabled services.
