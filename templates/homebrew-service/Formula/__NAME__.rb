@@ -26,7 +26,7 @@ class __CLASS__ < Formula
   end
 
   service do
-    run ["/bin/sh", "-c", "[ -f #{etc}/__NAME__/env ] && set -a && . #{etc}/__NAME__/env; exec #{opt_bin}/__NAME__ --log-file #{var}/log/__NAME__.log"]
+    run ["/bin/sh", "-c", "[ -f #{etc}/__NAME__/env ] && set -a && . #{etc}/__NAME__/env; exec #{opt_bin}/__NAME__ serve --log-file #{var}/log/__NAME__.log"]
     keep_alive true
     working_dir var/"__NAME__"
     log_path var/"log/__NAME__.log"

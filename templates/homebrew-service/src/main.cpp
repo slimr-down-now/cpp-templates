@@ -1,7 +1,8 @@
-#include "daemon.hpp"
+#include "app.hpp"
 #include "log_file.hpp"
 
-#include <chrono>
+#include <serve_http.hpp>
+
 #include <exception>
 #include <iostream>
 #include <memory>
@@ -11,19 +12,16 @@
 #include <utility>
 #include <vector>
 
-namespace {
-
-void printUsage(std::ostream &out) {
-    out << "Usage: __NAME__ [--log-file <path>] [--version] [--help]\n";
-}
-
-} // namespace
-
+/* Entry point (all surfaces share app::make_app):
+ *   __NAME__ serve [--host <addr>] [--port <n>] [--log-file <path>]
+ *   __NAME__ [--remote <unix:path|http://...>] <tool> ['{"arg":"val"}']
+ */
 int main(int argc, char *argv[]) try {
     std::optional<std::string> logFile;
-    std::vector<std::string_view> args;
-    if (argc > 1 && argv != nullptr) {
-        args.reserve(static_cast<size_t>(argc - 1));
+    std::vector<char *> filteredArgv;
+    if (argc > 0 && argv != nullptr) {
+        filteredArgv.reserve(static_cast<size_t>(argc));
+        filteredArgv.push_back(argv[0]);
         for (int i = 1; i < argc; ++i) {
             const char *arg = argv[i];
             if (arg == nullptr) {
@@ -46,7 +44,7 @@ int main(int argc, char *argv[]) try {
                 }
                 logFile = std::string(val);
             } else {
-                args.push_back(sv);
+                filteredArgv.push_back(argv[i]);
             }
         }
     }
@@ -61,27 +59,11 @@ int main(int argc, char *argv[]) try {
         logGuard = std::move(*opened);
     }
 
-    for (const std::string_view arg : args) {
-        if (arg == "--version") {
-            std::cout << "__NAME__ " << APP_VERSION << "\n";
-            return 0;
-        }
-        if (arg == "--help") {
-            printUsage(std::cout);
-            return 0;
-        }
-        printUsage(std::cerr);
-        return 2;
-    }
-
-    if (const auto installed = app::installStopHandlers(); !installed) {
-        std::cerr << installed.error() << "\n";
-        return 1;
-    }
-
-    std::cerr << "__NAME__ " << APP_VERSION << " started\n";
-    return app::runHeartbeat(app::stopRequested, std::chrono::seconds{5},
-                             std::cerr);
+    auto app = app::make_app();
+    // Opt-in TCP listener; `serve --host/--port` override it.
+    slimr::enable_serve(app, {.host = "127.0.0.1", .port = __PORT__});
+    return slimr::run_cli(app, static_cast<int>(filteredArgv.size()),
+                          filteredArgv.data());
 } catch (const std::exception &e) {
     std::cerr << "__NAME__: fatal: " << e.what() << "\n";
     return 1;

@@ -25,7 +25,7 @@
     "README.md",
     "VERSION",
     "docs/**",
-    "src/daemon.hpp",
+    "src/app.hpp",
     "src/main.cpp",
     "tests/**",
     "vcpkg-configuration.json",

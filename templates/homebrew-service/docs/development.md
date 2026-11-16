@@ -10,10 +10,11 @@ just test
 just lint
 ```
 
-Iterate quickly on a single doctest case with `just test "<case>"`. Run the direct binary locally:
+Iterate quickly on a single doctest case with `just test "<case>"`. Run the server and call a tool locally:
 
 ```bash
-./build/bin/__NAME__
+./build/bin/__NAME__ serve --port __PORT__
+./build/bin/__NAME__ --remote http://127.0.0.1:__PORT__ status
 ```
 
 ## Release

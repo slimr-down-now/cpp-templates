@@ -71,9 +71,11 @@ if(NOT HAVE_IPO)
     message(FATAL_ERROR "Release IPO is required: ${IPO_ERROR}")
 endif()
 
+find_package(slimr-serve CONFIG REQUIRED)
+
 add_executable(__NAME__ src/main.cpp)
 target_include_directories(__NAME__ PRIVATE src)
-target_link_libraries(__NAME__ PRIVATE app_options)
+target_link_libraries(__NAME__ PRIVATE slimr::serve_http app_options)
 set_target_properties(__NAME__ PROPERTIES
     INTERPROCEDURAL_OPTIMIZATION_RELEASE ON
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}/build/bin")
@@ -82,7 +84,7 @@ if(BUILD_TESTING)
     find_package(slimr-test CONFIG REQUIRED)
     add_executable(__NAME___test tests/test_main.cpp)
     target_include_directories(__NAME___test PRIVATE src tests)
-    target_link_libraries(__NAME___test PRIVATE slimr::test app_options)
+    target_link_libraries(__NAME___test PRIVATE slimr::serve_http slimr::test app_options)
     set_target_properties(__NAME___test PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
     add_test(NAME __NAME__ COMMAND __NAME___test)
     set_tests_properties(__NAME__ PROPERTIES TIMEOUT 120

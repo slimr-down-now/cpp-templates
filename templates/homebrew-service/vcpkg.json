@@ -2,6 +2,10 @@
   "name": "__NAME__",
   "description": "__DESC__",
   "dependencies": [
+    {
+      "name": "slimr-serve",
+      "features": ["http"]
+    },
     "slimr-test"
   ]
 }
