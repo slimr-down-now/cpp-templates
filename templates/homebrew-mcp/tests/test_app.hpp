@@ -22,16 +22,19 @@ TEST_CASE("app - registers guide resource and hello tool") {
     const auto *hello = application.findTool("hello");
     REQUIRE(hello != nullptr);
 
-    const auto normal = hello->handler(slimr::Json::object_t{{"name", "world"}},
-                                       slimr::RequestContext{});
+    const auto normalSr =
+        hello->handler(slimr::Json::object_t{{"name", "world"}},
+                       slimr::RequestContext{});
+    const auto normal = slimr::serve_result_to_mcp_result(normalSr);
     CHECK(!normal.isError);
     REQUIRE(normal.structuredContent.has_value());
     CHECK_EQ((*normal.structuredContent)["greeting"].get<std::string>(),
              "Hello, world!");
 
-    const auto shouted =
+    const auto shoutedSr =
         hello->handler(slimr::Json::object_t{{"name", "world"}, {"shout", true}},
                        slimr::RequestContext{});
+    const auto shouted = slimr::serve_result_to_mcp_result(shoutedSr);
     CHECK(!shouted.isError);
     REQUIRE(shouted.structuredContent.has_value());
     CHECK_EQ((*shouted.structuredContent)["greeting"].get<std::string>(),

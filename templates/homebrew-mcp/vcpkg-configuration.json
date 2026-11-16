@@ -7,8 +7,14 @@
     {
       "kind": "git",
       "repository": "https://github.com/slimr-down-now/mcp.git",
-      "baseline": "75da5e3fe947ad52d5516c10eaf5c4e9fc2fe9a1",
+      "baseline": "d295af4d3dbd54517bee107a1c6d69f0a41c1287",
       "packages": ["slimr-mcp"]
+    },
+    {
+      "kind": "git",
+      "repository": "https://github.com/slimr-down-now/serve.git",
+      "baseline": "c73a85e6b82705570c1e6a7b58b05cb9f77dc638",
+      "packages": ["slimr-serve"]
     },
     {
       "kind": "git",
