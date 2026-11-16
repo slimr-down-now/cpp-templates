@@ -26,12 +26,13 @@ brew services start __NAME__
 brew services info __NAME__
 ```
 
-The service runs `__NAME__ serve`, listening on `http://127.0.0.1:__PORT__` (`--host`/`--port` override it). It logs to `$(brew --prefix)/var/log/__NAME__.log` with 10 MB rotation (keeping one `.1` backup).
+The service runs `__NAME__ serve`, listening on `$(brew --prefix)/var/__NAME__/__NAME__.sock` (`--socket` overrides it; pass `--port __PORT__` and optional `--host` to opt into TCP). It logs to `$(brew --prefix)/var/log/__NAME__.log` with 10 MB rotation (keeping one `.1` backup).
 
-Call a tool in-process, or relay it to the running service:
+CLI tool calls relay to the running service over the default Unix socket (`--remote unix:<path>` or `--remote http://127.0.0.1:__PORT__` override it):
 
 ```bash
 __NAME__ status
+__NAME__ --remote unix:/path/to/__NAME__.sock status
 __NAME__ --remote http://127.0.0.1:__PORT__ status
 ```
 

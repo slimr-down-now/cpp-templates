@@ -25,14 +25,14 @@
     {
       "kind": "git",
       "repository": "https://github.com/slimr-down-now/bugsink.git",
-      "baseline": "96e8d252fe8993ab59e871d45b5ca08afff83f08",
+      "baseline": "729a3fbbec39a391fe0a74126e77f5047fd78e3b",
       "packages": ["slimr-bugsink"]
     },
     {
       "kind": "git",
-      "repository": "https://github.com/slimr-down-now/curl.git",
-      "baseline": "2e64d6b432cf9af8499c2e773015a3957b22c395",
-      "packages": ["slimr-curl"]
+      "repository": "https://github.com/slimr-down-now/serve.git",
+      "baseline": "c73a85e6b82705570c1e6a7b58b05cb9f77dc638",
+      "packages": ["slimr-serve"]
     }
   ]
 }

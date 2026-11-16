@@ -10,9 +10,12 @@ just test
 just lint
 ```
 
-Iterate quickly on a single doctest case with `just test "<case>"`. Run the server and call a tool locally:
+Iterate quickly on a single doctest case with `just test "<case>"`. Run the server and call a tool locally (defaulting to the Unix socket, or opt into TCP with `--port __PORT__`):
 
 ```bash
+./build/bin/__NAME__ serve --socket ./build/__NAME__.sock
+./build/bin/__NAME__ --remote unix:./build/__NAME__.sock status
+
 ./build/bin/__NAME__ serve --port __PORT__
 ./build/bin/__NAME__ --remote http://127.0.0.1:__PORT__ status
 ```

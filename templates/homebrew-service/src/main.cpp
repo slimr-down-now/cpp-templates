@@ -13,7 +13,7 @@
 #include <vector>
 
 /* Entry point (all surfaces share app::make_app):
- *   __NAME__ serve [--host <addr>] [--port <n>] [--log-file <path>]
+ *   __NAME__ serve [--socket <path>] [--host <addr>] [--port <n>] [--log-file <path>]
  *   __NAME__ [--remote <unix:path|http://...>] <tool> ['{"arg":"val"}']
  */
 int main(int argc, char *argv[]) try {
@@ -60,8 +60,9 @@ int main(int argc, char *argv[]) try {
     }
 
     auto app = app::make_app();
-    // Opt-in TCP listener; `serve --host/--port` override it.
-    slimr::enable_serve(app, {.host = "127.0.0.1", .port = __PORT__});
+    // Default Unix socket listener; `--socket` overrides it and `--port` opts into TCP.
+    slimr::enable_serve(
+        app, {.host = "127.0.0.1", .socketPath = app::default_socket_path()});
     return slimr::run_cli(app, static_cast<int>(filteredArgv.size()),
                           filteredArgv.data());
 } catch (const std::exception &e) {
