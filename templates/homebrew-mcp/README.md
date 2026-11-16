@@ -35,7 +35,7 @@ Add to `.mcp.json`:
 }
 ```
 
-Or run over stdio (`__NAME__ mcp`) or direct CLI (`__NAME__ hello '{"name":"world"}'`).
+Or call a tool directly from the CLI (`__NAME__ hello '{"name":"world"}'`).
 
 ## Environment Variables
 

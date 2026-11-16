@@ -31,7 +31,7 @@ just new <template> <name> <path>
 
 ## Wire env vars, logs, and Bugsink
 
-- Declare required env vars in `PluginApp` with name and purpose; the runner checks them before `mcp`, `http`, or tool commands and exits naming every missing one (`--skip-checks` bypasses the check; `--version` and `--help` never run it)
+- Declare required env vars in `PluginApp` with name and purpose; the runner checks them before `http` or tool commands and exits naming every missing one (`--skip-checks` bypasses the check; `--version` and `--help` never run it)
 - Store app data in `$(brew --prefix)/var/<name>`, non-secret config in `$(brew --prefix)/etc/<name>/`, and service secrets in `$(brew --prefix)/etc/<name>/env` (`chmod 600`, never in the public formula)
 - Pass compiled-in `VERSION` to `BugsinkReporter(dsn, envVar, "<name>@" VERSION)` so events carry `release`
 - Document every env var in `README.md` with an env var table (name, required or optional, purpose)

@@ -9,7 +9,7 @@ Source of truth for C++26 project tooling, CI workflows, Homebrew packaging, and
 | `library` | vcpkg git registry (own repo) | C++26 libraries |
 | `homebrew-formula` | Homebrew formula | CLI binaries |
 | `homebrew-service` | Homebrew formula + `brew services` | Generic daemons |
-| `homebrew-mcp` | Homebrew formula + `brew services` + MCP | MCP stdio + HTTP servers |
+| `homebrew-mcp` | Homebrew formula + `brew services` + MCP | MCP HTTP servers |
 | `homebrew-cask` | Homebrew cask (macOS only) | `.app`, `.pkg`, or `.dmg` distributions |
 
 ## Quickstart
