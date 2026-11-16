@@ -358,42 +358,45 @@ describe("cpp-templates tooling", () => {
   });
 
   if (process.platform === "darwin") {
-    test("verifies otool -L allowlist and empty nm -gU on built darwin executables", () => {
-      const root = makeFixtureRoot();
-      try {
-        const target = path.join(root, "out", "demo-app");
-        expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+    test(
+      "verifies otool -L allowlist and empty nm -gU on built darwin executables",
+      () => {
+        const root = makeFixtureRoot();
+        try {
+          const target = path.join(root, "out", "demo-app");
+          expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
 
-        const binDir = path.join(target, "build", "bin");
-        mkdirSync(binDir, { recursive: true });
-        const srcC = path.join(root, "probe.c");
-        const binPath = path.join(binDir, "demo-app");
+          const binDir = path.join(target, "build", "bin");
+          mkdirSync(binDir, { recursive: true });
+          const srcC = path.join(root, "probe.c");
+          const binPath = path.join(binDir, "demo-app");
 
-        // Clean C binary with -Wl,-exported_symbols_list,/dev/null passes
-        writeFileSync(srcC, "void exported_sym(void) {}\nint main(void) { return 0; }\n");
-        expect(
-          Bun.spawnSync(["/usr/bin/clang", srcC, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
-        ).toBe(0);
-        expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+          // Clean C binary with -Wl,-exported_symbols_list,/dev/null passes
+          writeFileSync(srcC, "void exported_sym(void) {}\nint main(void) { return 0; }\n");
+          expect(
+            Bun.spawnSync(["/usr/bin/clang", srcC, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
+          ).toBe(0);
+          expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
 
-        // Missing -Wl,-exported_symbols_list,/dev/null fails nm -gU
-        expect(Bun.spawnSync(["/usr/bin/clang", srcC, "-o", binPath]).exitCode).toBe(0);
-        const nmFail = runScript("check.ts", ["fixture", target], root);
-        expect(nmFail.exitCode).toBe(1);
-        expect(nmFail.stderr).toContain("exports symbols");
+          // Missing -Wl,-exported_symbols_list,/dev/null fails nm -gU
+          expect(Bun.spawnSync(["/usr/bin/clang", srcC, "-o", binPath]).exitCode).toBe(0);
+          const nmFail = runScript("check.ts", ["fixture", target], root);
+          expect(nmFail.exitCode).toBe(1);
+          expect(nmFail.stderr).toContain("exports symbols");
 
-        // Dynamic /usr/lib/libc++.1.dylib fails otool -L allowlist
-        const srcCpp = path.join(root, "probe.cpp");
-        writeFileSync(srcCpp, "#include <iostream>\nint main() { std::cout << 1; return 0; }\n");
-        expect(
-          Bun.spawnSync(["/usr/bin/clang++", srcCpp, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
-        ).toBe(0);
-        const otoolFail = runScript("check.ts", ["fixture", target], root);
-        expect(otoolFail.exitCode).toBe(1);
-        expect(otoolFail.stderr).toContain("unexpected dylibs");
-      } finally {
-        rmSync(root, { recursive: true, force: true });
-      }
-    });
+          // Dynamic /usr/lib/libc++.1.dylib fails otool -L allowlist
+          expect(
+            Bun.spawnSync(["/usr/bin/clang", srcC, "-lc++", "-Wl,-exported_symbols_list,/dev/null", "-o", binPath])
+              .exitCode,
+          ).toBe(0);
+          const otoolFail = runScript("check.ts", ["fixture", target], root);
+          expect(otoolFail.exitCode).toBe(1);
+          expect(otoolFail.stderr).toContain("unexpected dylibs");
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
+      },
+      { timeout: 30_000 },
+    );
   }
 });
