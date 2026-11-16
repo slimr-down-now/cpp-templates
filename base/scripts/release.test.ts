@@ -362,4 +362,72 @@ end
     expect(readGhCalls(fixture).length).toBe(0);
     expect(runGit(fixture.remoteDir, ["--git-dir=.", "tag"])).toBe("");
   }, 30_000);
+
+  test("next and publish resolve Formula over Casks without touching Casks", () => {
+    const fixture = createFixture("demo-formula");
+    mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
+    mkdirSync(join(fixture.repoDir, "Casks"), { recursive: true });
+    mkdirSync(join(fixture.repoDir, "assets"), { recursive: true });
+
+    const formulaInitial = `class DemoFormula < Formula
+  homepage "https://github.com/example/demo-formula"
+  version "0.1.0"
+
+  def install
+    bin.install "demo-formula"
+  end
+end
+`;
+    const caskInitial = `cask "driver" do
+  version "0.0.1"
+  sha256 "deadbeef"
+  url "https://example.com/driver.pkg"
+end
+`;
+    writeFileSync(join(fixture.repoDir, "Formula", "demo-formula.rb"), formulaInitial);
+    writeFileSync(join(fixture.repoDir, "Casks", "driver.rb"), caskInitial);
+    writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
+    writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Formula release\n");
+
+    const macBytes = "formula-mac-tar";
+    writeFileSync(join(fixture.repoDir, "assets", "demo-formula-arm64-macos.tar.gz"), macBytes);
+    commitAndPushInitial(fixture);
+
+    const nextRes = runRelease(fixture, ["next", "patch"]);
+    expect(nextRes.exitCode).toBe(0);
+    expect(nextRes.stdout.toString()).toBe("0.1.1\n");
+
+    const pubRes = runRelease(fixture, ["publish", "0.1.1", "assets"]);
+    expect(pubRes.exitCode).toBe(0);
+
+    const updatedFormula = readFileSync(join(fixture.repoDir, "Formula", "demo-formula.rb"), "utf8");
+    expect(updatedFormula).toContain('version "0.1.1"');
+    expect(updatedFormula).toContain(`sha256 "${sha256(macBytes)}"`);
+    expect(readFileSync(join(fixture.repoDir, "Casks", "driver.rb"), "utf8")).toBe(caskInitial);
+
+    const committedFiles = runGit(fixture.repoDir, ["show", "--name-only", "--format=", "HEAD"]).split("\n").sort();
+    expect(committedFiles).toEqual(["CHANGELOG.md", "Formula/demo-formula.rb", "VERSION"]);
+
+    const ghCalls = readGhCalls(fixture);
+    expect(ghCalls.length).toBe(1);
+    expect(ghCalls[0]).toContain("demo-formula-arm64-macos.tar.gz");
+  }, 30_000);
+
+  test("next rejects multiple Formula/*.rb files even when Casks/*.rb exists", () => {
+    const fixture = createFixture("multi-formula");
+    mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
+    mkdirSync(join(fixture.repoDir, "Casks"), { recursive: true });
+    writeFileSync(join(fixture.repoDir, "Formula", "one.rb"), "class One < Formula\nend\n");
+    writeFileSync(join(fixture.repoDir, "Formula", "two.rb"), "class Two < Formula\nend\n");
+    writeFileSync(join(fixture.repoDir, "Casks", "driver.rb"), 'cask "driver" do\nend\n');
+    writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
+    writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Test\n");
+    commitAndPushInitial(fixture);
+
+    const res = runRelease(fixture, ["next", "patch"]);
+    expect(res.exitCode).not.toBe(0);
+    expect(res.stderr.toString()).toContain("Expected exactly 1 Formula/*.rb file, found 2");
+  });
 });
