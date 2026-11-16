@@ -19,7 +19,7 @@ Reformat C++ sources in their own commit (`style: clang-format`), add the commit
 
 ## Run `just check` loop
 
-Run from `~/dev/bdombro/cpp-templates`:
+Run from `~/dev/slimr/cpp-templates`:
 
 ```sh
 just check <template> <path>

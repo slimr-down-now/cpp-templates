@@ -38,7 +38,7 @@ just test
 Symlink the included skill so agents can create or align repositories from any workspace:
 
 ```sh
-ln -s ~/dev/bdombro/cpp-templates/skills/cpp-templates ~/.agents/skills/cpp-templates
+ln -s ~/dev/slimr/cpp-templates/skills/cpp-templates ~/.agents/skills/cpp-templates
 ```
 
 See `skills/cpp-templates/reference.md` for template selection, `manifest.json` rules, and operational guides (`create`, `align`, `release`, `linux`).

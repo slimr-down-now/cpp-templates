@@ -8,7 +8,7 @@ Outline
 
 ## Scaffold with `just new`
 
-Run from `~/dev/bdombro/cpp-templates`:
+Run from `~/dev/slimr/cpp-templates`:
 
 ```sh
 just new <template> <name> <path>
