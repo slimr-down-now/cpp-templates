@@ -326,4 +326,74 @@ describe("cpp-templates tooling", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  test("enforces -Wl,-exported_symbols_list,/dev/null in CMakeLists.txt when template has one", () => {
+    const root = makeFixtureRoot();
+    try {
+      writeFileSync(
+        path.join(root, "templates", "fixture", "CMakeLists.txt"),
+        "target_link_options(app_options INTERFACE -Wl,-exported_symbols_list,/dev/null)\n",
+      );
+      const target = path.join(root, "out", "demo-app");
+      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+
+      writeFileSync(
+        path.join(target, "CMakeLists.txt"),
+        "target_link_options(app_options INTERFACE -Wl,-exported_symbols_list,/dev/null)\n",
+      );
+      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+
+      writeFileSync(path.join(target, "CMakeLists.txt"), "add_executable(demo-app main.cpp)\n");
+      const missingFlag = runScript("check.ts", ["fixture", target], root);
+      expect(missingFlag.exitCode).toBe(1);
+      expect(missingFlag.stderr).toContain("-Wl,-exported_symbols_list,/dev/null");
+
+      rmSync(path.join(target, "CMakeLists.txt"));
+      const missingFile = runScript("check.ts", ["fixture", target], root);
+      expect(missingFile.exitCode).toBe(1);
+      expect(missingFile.stderr).toContain("missing CMakeLists.txt");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  if (process.platform === "darwin") {
+    test("verifies otool -L allowlist and empty nm -gU on built darwin executables", () => {
+      const root = makeFixtureRoot();
+      try {
+        const target = path.join(root, "out", "demo-app");
+        expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
+
+        const binDir = path.join(target, "build", "bin");
+        mkdirSync(binDir, { recursive: true });
+        const srcC = path.join(root, "probe.c");
+        const binPath = path.join(binDir, "demo-app");
+
+        // Clean C binary with -Wl,-exported_symbols_list,/dev/null passes
+        writeFileSync(srcC, "void exported_sym(void) {}\nint main(void) { return 0; }\n");
+        expect(
+          Bun.spawnSync(["/usr/bin/clang", srcC, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
+        ).toBe(0);
+        expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+
+        // Missing -Wl,-exported_symbols_list,/dev/null fails nm -gU
+        expect(Bun.spawnSync(["/usr/bin/clang", srcC, "-o", binPath]).exitCode).toBe(0);
+        const nmFail = runScript("check.ts", ["fixture", target], root);
+        expect(nmFail.exitCode).toBe(1);
+        expect(nmFail.stderr).toContain("exports symbols");
+
+        // Dynamic /usr/lib/libc++.1.dylib fails otool -L allowlist
+        const srcCpp = path.join(root, "probe.cpp");
+        writeFileSync(srcCpp, "#include <iostream>\nint main() { std::cout << 1; return 0; }\n");
+        expect(
+          Bun.spawnSync(["/usr/bin/clang++", srcCpp, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
+        ).toBe(0);
+        const otoolFail = runScript("check.ts", ["fixture", target], root);
+        expect(otoolFail.exitCode).toBe(1);
+        expect(otoolFail.stderr).toContain("unexpected dylibs");
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
 });

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 interface Manifest {
@@ -302,6 +302,54 @@ if (!existsSync(templateJustfile)) {
     const actJson = JSON.stringify(recipeShape(actualRecipe), null, 2);
     if (expJson !== actJson) {
       errors.push(`recipe mismatch for '${recipeName}':\n${lineDiff(`recipe:${recipeName}`, expJson, actJson)}`);
+    }
+  }
+}
+
+if (existsSync(path.join(templateDir, "CMakeLists.txt")) && !isSkipped("CMakeLists.txt")) {
+  const targetCmake = path.join(targetDir, "CMakeLists.txt");
+  if (!existsSync(targetCmake)) {
+    errors.push("missing CMakeLists.txt");
+  } else if (!readFileSync(targetCmake, "utf8").includes("-Wl,-exported_symbols_list,/dev/null")) {
+    errors.push("CMakeLists.txt missing -Wl,-exported_symbols_list,/dev/null");
+  }
+}
+
+if (process.platform === "darwin") {
+  const binDir = path.join(targetDir, "build", "bin");
+  if (existsSync(binDir) && statSync(binDir).isDirectory()) {
+    const allowedDylib = (lib: string): boolean =>
+      lib.startsWith("/System/Library/") || lib === "/usr/lib/libSystem.B.dylib" || lib === "/usr/lib/libobjc.A.dylib";
+    for (const entry of readdirSync(binDir).sort()) {
+      const binPath = path.join(binDir, entry);
+      const st = statSync(binPath);
+      if (!st.isFile() || (st.mode & 0o111) === 0) continue;
+
+      const otool = Bun.spawnSync(["otool", "-L", binPath], { stdout: "pipe", stderr: "pipe" });
+      if (otool.exitCode !== 0) {
+        errors.push(`otool -L failed for build/bin/${entry}: ${otool.stderr.toString("utf8").trim()}`);
+      } else {
+        const libs = otool.stdout
+          .toString("utf8")
+          .split("\n")
+          .slice(1)
+          .map((line) => line.trim().split(/\s+/)[0])
+          .filter(Boolean);
+        const bad = libs.filter((lib) => !allowedDylib(lib));
+        if (bad.length > 0) {
+          errors.push(`unexpected dylibs in build/bin/${entry}: ${bad.join(", ")}`);
+        }
+      }
+
+      const nm = Bun.spawnSync(["nm", "-gU", binPath], { stdout: "pipe", stderr: "pipe" });
+      if (nm.exitCode !== 0) {
+        errors.push(`nm -gU failed for build/bin/${entry}: ${nm.stderr.toString("utf8").trim()}`);
+      } else {
+        const exported = nm.stdout.toString("utf8").trim();
+        if (exported.length > 0) {
+          errors.push(`build/bin/${entry} exports symbols (expected empty nm -gU):\n${exported}`);
+        }
+      }
     }
   }
 }

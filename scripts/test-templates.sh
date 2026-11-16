@@ -60,5 +60,8 @@ for dir in "${template_dirs[@]}"; do
   git -C "$tmp" init -q
   BUGSINK_DSN="" just --justfile "$tmp/justfile" --working-directory "$tmp" test
   just --justfile "$tmp/justfile" --working-directory "$tmp" lint
+  if [[ "$tmpl" == homebrew-* ]]; then
+    just --justfile "$tmp/justfile" --working-directory "$tmp" build
+  fi
   bun scripts/check.ts "$tmpl" "$tmp"
 done
