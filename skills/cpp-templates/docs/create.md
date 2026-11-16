@@ -23,6 +23,7 @@ just new <template> <name> <path>
 
 ## Fill repository values
 
+- `homebrew-formula` is a bare CLI starter (`argv` subcommands, `--help`/`--version`, exit codes; no `slimr-cli`, JSON, or reflection) whose `src/**` is copied once via `seed`
 - In `justfile`, set `formula`, `endpoint`, `tools`, `test_target`, and `platforms` (`"macos linux"` or `"macos"` for desktop-browser / macOS-API apps and casks)
 - For `homebrew-*` apps, set the initial version in `VERSION` (CMake compiles it into `--version`)
 - For `library` repos, set the initial version in `ports/<name>/vcpkg.json` and run `vcpkg x-add-version`
