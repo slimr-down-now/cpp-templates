@@ -11,7 +11,7 @@ Outline
 
 Before editing an MCP repo, save snapshots to compare after the port:
 
-- `tools/list` and `resources/list` JSON from `<bin> mcp`
+- `tools/list` and `resources/list` JSON from `<bin> http --port 0` plus `POST /mcp` `server/discover`
 - doctest case count
 - `just --list` output
 
