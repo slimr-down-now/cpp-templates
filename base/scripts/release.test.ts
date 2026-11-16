@@ -298,12 +298,12 @@ end
       writeFileSync(join(fixture.repoDir, "ports", "slimr-demo", "portfile.cmake"), "# demo portfile\n");
 
       if (multiPort) {
-        mkdirSync(join(fixture.repoDir, "ports", "libhv"), { recursive: true });
+        mkdirSync(join(fixture.repoDir, "ports", "slimr-extra"), { recursive: true });
         writeFileSync(
-          join(fixture.repoDir, "ports", "libhv", "vcpkg.json"),
-          `{\n  "name": "libhv",\n  "version": "1.3.3"\n}\n`,
+          join(fixture.repoDir, "ports", "slimr-extra", "vcpkg.json"),
+          `{\n  "name": "slimr-extra",\n  "version": "1.3.3"\n}\n`,
         );
-        writeFileSync(join(fixture.repoDir, "ports", "libhv", "portfile.cmake"), "# libhv portfile\n");
+        writeFileSync(join(fixture.repoDir, "ports", "slimr-extra", "portfile.cmake"), "# slimr-extra portfile\n");
         writeFileSync(join(fixture.repoDir, "vcpkg.json"), `{\n  "name": "slimr-demo"\n}\n`);
       }
 
