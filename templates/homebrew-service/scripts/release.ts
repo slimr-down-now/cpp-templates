@@ -4,7 +4,8 @@ import { $ } from "bun";
 import {
   applyBump, assertSemver, assetFilename, type Bump, bumpFromLabels, detectRepo, errorMessage,
   extractChangelogNotes, isDocsOnlyFiles, type PlatformAsset, promoteChangelog, readPlatforms,
-  readVersion, type RepoInfo, resolveGitHubRepo, sha256File, updateCaskRuby, updateFormulaRuby,
+  readVersion, type RepoInfo, resolveGitHubRepo, retargetChangelog, sha256File, updateCaskRuby,
+  updateFormulaRuby,
 } from "./formula-shared.ts";
 
 type Command =
@@ -76,15 +77,39 @@ async function readBaseVersion(repoRoot: string, repo: RepoInfo, baseRef?: strin
   return readVersionText(repo, res.stdout.toString(), `${baseRef}:${relPath}`);
 }
 
-function hasLibraryVersionEntry(repoRoot: string, name: string, version: string): boolean {
+async function readPortTreeSha(repoRoot: string, name: string): Promise<string | null> {
+  const res = await $`git rev-parse ${`HEAD:ports/${name}`}`.cwd(repoRoot).nothrow().quiet();
+  if (res.exitCode !== 0) return null;
+  return res.stdout.toString().trim() || null;
+}
+
+function hasLibraryVersionEntry(repoRoot: string, name: string, version: string, portTreeSha: string | null): boolean {
   const baselinePath = join(repoRoot, "versions", "baseline.json");
   const entryPath = join(repoRoot, "versions", `${name.charAt(0)}-`, `${name}.json`);
   if (!existsSync(baselinePath) || !existsSync(entryPath)) return false;
   try {
-    const entry = JSON.parse(readFileSync(entryPath, "utf8")) as { versions?: Array<{ version?: string }> };
-    return Array.isArray(entry.versions) && entry.versions.some((v) => v.version === version);
+    const entry = JSON.parse(readFileSync(entryPath, "utf8")) as {
+      versions?: Array<{ version?: string; "git-tree"?: string }>;
+    };
+    return (
+      Array.isArray(entry.versions) &&
+      entry.versions.some((v) => v.version === version && (portTreeSha === null || v["git-tree"] === portTreeSha))
+    );
   } catch {
     return false;
+  }
+}
+
+function removeLibraryVersionEntry(repoRoot: string, name: string, version: string): void {
+  const entryPath = join(repoRoot, "versions", `${name.charAt(0)}-`, `${name}.json`);
+  if (!existsSync(entryPath)) return;
+  const entry = JSON.parse(readFileSync(entryPath, "utf8")) as {
+    versions?: Array<{ version?: string; [k: string]: unknown }>;
+  };
+  if (!Array.isArray(entry.versions)) return;
+  const filtered = entry.versions.filter((v) => v.version !== version);
+  if (filtered.length !== entry.versions.length) {
+    writeFileSync(entryPath, `${JSON.stringify({ versions: filtered }, null, 2)}\n`);
   }
 }
 
@@ -105,6 +130,7 @@ async function runPrep(repoRoot: string, base: string | undefined, labels: strin
   const currentVersion = readCurrentVersion(repoRoot, repo);
   const changelogPath = join(repoRoot, "CHANGELOG.md");
   const changelogRaw = readFileSync(changelogPath, "utf8");
+  const date = new Date().toISOString().slice(0, 10);
 
   let changelogReady = false;
   try {
@@ -114,13 +140,31 @@ async function runPrep(repoRoot: string, base: string | undefined, labels: strin
     changelogReady = false;
   }
 
-  const versionsReady = repo.kind !== "library" || hasLibraryVersionEntry(repoRoot, repo.name, expectedVersion);
+  const portTreeSha = repo.kind === "library" ? await readPortTreeSha(repoRoot, repo.name) : null;
+  const versionsReady =
+    repo.kind !== "library" || hasLibraryVersionEntry(repoRoot, repo.name, expectedVersion, portTreeSha);
   if (currentVersion === expectedVersion && changelogReady && versionsReady) {
     console.log(`already_prepped=${expectedVersion}`);
     return;
   }
 
-  const { changelog } = promoteChangelog(changelogRaw, expectedVersion, new Date().toISOString().slice(0, 10));
+  if (currentVersion === expectedVersion && changelogReady && !versionsReady && repo.kind === "library") {
+    if (commit) {
+      mkdirSync(join(repoRoot, "versions"), { recursive: true });
+      await $`vcpkg x-add-version ${repo.name} ${`--x-builtin-ports-root=${join(repoRoot, "ports")}`} ${`--x-builtin-registry-versions-dir=${join(repoRoot, "versions")}`} --overwrite-version --verbose`
+        .cwd(repoRoot)
+        .quiet();
+      await $`git add -- versions`.cwd(repoRoot).quiet();
+      await $`git commit -m ${`Release prep v${expectedVersion}`}`.cwd(repoRoot).quiet();
+    }
+    console.log(`bumped=${expectedVersion}`);
+    return;
+  }
+
+  const canRetarget = currentVersion !== baseVersion && currentVersion !== expectedVersion;
+  const changelog = canRetarget
+    ? retargetChangelog(changelogRaw, currentVersion, expectedVersion, date)
+    : promoteChangelog(changelogRaw, expectedVersion, date).changelog;
   writeFileSync(changelogPath, changelog);
 
   if (repo.kind === "library") {
@@ -130,11 +174,18 @@ async function runPrep(repoRoot: string, base: string | undefined, labels: strin
       throw new Error(`${manifestPath} must contain a "version" field.`);
     }
     writeFileSync(manifestPath, manifestRaw.replace(/("version"\s*:\s*)"[^"]*"/, `$1${JSON.stringify(expectedVersion)}`));
+    if (canRetarget) {
+      removeLibraryVersionEntry(repoRoot, repo.name, currentVersion);
+    }
     if (commit) {
-      await $`git add -- ${relative(repoRoot, manifestPath)} CHANGELOG.md`.cwd(repoRoot).quiet();
+      const toStage = [relative(repoRoot, manifestPath), "CHANGELOG.md"];
+      if (canRetarget && existsSync(join(repoRoot, "versions"))) {
+        toStage.push("versions");
+      }
+      await $`git add -- ${toStage}`.cwd(repoRoot).quiet();
       await $`git commit -m ${`Release prep v${expectedVersion}`}`.cwd(repoRoot).quiet();
       mkdirSync(join(repoRoot, "versions"), { recursive: true });
-      await $`vcpkg x-add-version ${repo.name} ${`--x-builtin-ports-root=${join(repoRoot, "ports")}`} ${`--x-builtin-registry-versions-dir=${join(repoRoot, "versions")}`} --verbose`
+      await $`vcpkg x-add-version ${repo.name} ${`--x-builtin-ports-root=${join(repoRoot, "ports")}`} ${`--x-builtin-registry-versions-dir=${join(repoRoot, "versions")}`} --overwrite-version --verbose`
         .cwd(repoRoot)
         .quiet();
       await $`git add -- versions`.cwd(repoRoot).quiet();

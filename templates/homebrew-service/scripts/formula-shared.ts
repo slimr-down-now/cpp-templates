@@ -315,3 +315,37 @@ export function promoteChangelog(content: string, version: string, date: string)
     notes: `${body}\n`,
   };
 }
+
+export function retargetChangelog(content: string, fromVersion: string, toVersion: string, date: string): string {
+  const normalized = content.replaceAll("\r\n", "\n");
+  const unreleasedRe = /^## Unreleased[ \t]*$/gm;
+  const unreleasedMatches = [...normalized.matchAll(unreleasedRe)];
+  if (unreleasedMatches.length !== 1) throw new Error("CHANGELOG.md must have exactly one ## Unreleased heading.");
+
+  const escapedFrom = fromVersion.replaceAll(".", "\\.");
+  const fromRe = new RegExp(`^## v${escapedFrom}(?:\\s+-\\s+.*)?$`, "m");
+  const fromMatch = normalized.match(fromRe);
+  if (!fromMatch || fromMatch.index === undefined) {
+    return promoteChangelog(normalized, toVersion, date).changelog;
+  }
+
+  const fromStart = fromMatch.index;
+  const afterFromHeading = fromStart + fromMatch[0].length;
+  const nextSectionRel = normalized.slice(afterFromHeading).search(/^## /m);
+  const fromEnd = nextSectionRel === -1 ? normalized.length : afterFromHeading + nextSectionRel;
+  const fromBody = normalized.slice(afterFromHeading, fromEnd).trim();
+  const withoutFrom = `${normalized.slice(0, fromStart)}${normalized.slice(fromEnd)}`.replace(/\n{3,}/g, "\n\n");
+
+  const uMatch = [...withoutFrom.matchAll(/^## Unreleased[ \t]*$/gm)][0]!;
+  const afterU = uMatch.index! + uMatch[0].length;
+  const nextAfterURel = withoutFrom.slice(afterU).search(/^## /m);
+  const uEnd = nextAfterURel === -1 ? withoutFrom.length : afterU + nextAfterURel;
+  const uBody = withoutFrom.slice(afterU, uEnd).trim();
+
+  const combined = [uBody, fromBody].filter(Boolean).join("\n");
+  if (!combined) throw new Error("Add release notes under ## Unreleased before releasing.");
+
+  const tail = withoutFrom.slice(uEnd).replace(/^\n+/, "");
+  const suffix = tail ? `\n${tail}` : "";
+  return `${withoutFrom.slice(0, uMatch.index!)}## Unreleased\n\n## v${toVersion} - ${date}\n\n${combined}\n${suffix}`;
+}

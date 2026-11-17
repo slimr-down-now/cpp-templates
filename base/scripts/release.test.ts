@@ -164,6 +164,25 @@ describe("release.ts", () => {
     expect(second.stdout.toString()).toContain("already_prepped=1.2.4");
     expect(runGit(fixture.repoDir, ["rev-list", "--count", "HEAD"])).toBe(countBefore);
 
+    // Label added after initial prep re-targets 1.2.4 -> 1.3.0 and folds new Unreleased notes
+    const changelogWithExtra = readFileSync(join(fixture.repoDir, "CHANGELOG.md"), "utf8").replace(
+      "## Unreleased\n",
+      "## Unreleased\n\n- Extra note\n",
+    );
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), changelogWithExtra);
+    runGit(fixture.repoDir, ["add", "CHANGELOG.md"]);
+    runGit(fixture.repoDir, ["commit", "-m", "add extra note"]);
+
+    const retargetMinor = runRelease(fixture, ["prep", "--base", "origin/main", "--labels", "release:minor", "--commit"]);
+    expect(retargetMinor.exitCode).toBe(0);
+    expect(retargetMinor.stdout.toString()).toContain("bumped=1.3.0");
+    expect(readFileSync(join(fixture.repoDir, "VERSION"), "utf8")).toBe("1.3.0\n");
+    const retargetedChangelog = readFileSync(join(fixture.repoDir, "CHANGELOG.md"), "utf8");
+    expect(retargetedChangelog).toContain("## v1.3.0 - ");
+    expect(retargetedChangelog).not.toContain("## v1.2.4 - ");
+    expect(retargetedChangelog).toContain("- Extra note");
+    expect(retargetedChangelog).toContain("- Added thing");
+
     // Minor and major labels against base
     runGit(fixture.repoDir, ["reset", "--hard", "origin/main"]);
     const minor = runRelease(fixture, ["prep", "--base", "origin/main", "--labels", "bug,release:minor"]);
@@ -375,21 +394,46 @@ end
       expect(prepAgain.exitCode).toBe(0);
       expect(prepAgain.stdout.toString()).toContain("already_prepped=1.1.0");
 
+      // Post-prep port edit updates git-tree in versions/<x>-/<name>.json
+      writeFileSync(join(fixture.repoDir, "ports", "slimr-demo", "portfile.cmake"), "# updated portfile\n");
+      runGit(fixture.repoDir, ["add", "ports/slimr-demo/portfile.cmake"]);
+      runGit(fixture.repoDir, ["commit", "-m", "edit portfile after prep"]);
+      const expectedTree = runGit(fixture.repoDir, ["rev-parse", "HEAD:ports/slimr-demo"]);
+
+      const prepTree = runRelease(fixture, ["prep", "--base", "origin/main", "--labels", "release:minor", "--commit"]);
+      expect(prepTree.exitCode).toBe(0);
+      expect(prepTree.stdout.toString()).toContain("bumped=1.1.0");
+      const versionEntry = JSON.parse(
+        readFileSync(join(fixture.repoDir, "versions", "s-", "slimr-demo.json"), "utf8"),
+      ) as { versions: Array<{ version: string; "git-tree": string }> };
+      expect(versionEntry.versions.find((v) => v.version === "1.1.0")?.["git-tree"]).toBe(expectedTree);
+
+      // Re-targeting library from 1.1.0 -> 2.0.0 removes superseded 1.1.0 entry
+      const prepMajor = runRelease(fixture, ["prep", "--base", "origin/main", "--labels", "release:major", "--commit"]);
+      expect(prepMajor.exitCode).toBe(0);
+      expect(prepMajor.stdout.toString()).toContain("bumped=2.0.0");
+      const majorTree = runGit(fixture.repoDir, ["rev-parse", "HEAD:ports/slimr-demo"]);
+      const majorEntry = JSON.parse(
+        readFileSync(join(fixture.repoDir, "versions", "s-", "slimr-demo.json"), "utf8"),
+      ) as { versions: Array<{ version: string; "git-tree": string }> };
+      expect(majorEntry.versions.some((v) => v.version === "1.1.0")).toBe(false);
+      expect(majorEntry.versions.find((v) => v.version === "2.0.0")?.["git-tree"]).toBe(majorTree);
+
       const headBeforePublish = runGit(fixture.repoDir, ["rev-parse", "HEAD"]);
-      const pubRes = runRelease(fixture, ["publish", "1.1.0"]);
+      const pubRes = runRelease(fixture, ["publish", "2.0.0"]);
       expect(pubRes.exitCode).toBe(0);
       expect(runGit(fixture.repoDir, ["rev-parse", "HEAD"])).toBe(headBeforePublish);
 
       const remoteTags = runGit(fixture.remoteDir, ["--git-dir=.", "tag"]);
-      expect(remoteTags).toContain("v1.1.0");
+      expect(remoteTags).toContain("v2.0.0");
 
       const ghCalls = readGhCalls(fixture);
       expect(ghCalls.length).toBe(1);
-      expect(ghCalls[0]).toContain("release create v1.1.0 --verify-tag --title v1.1.0");
+      expect(ghCalls[0]).toContain("release create v2.0.0 --verify-tag --title v2.0.0");
       expect(ghCalls[0]).not.toContain(".tar.gz");
 
       // Re-running publish fails when tag already exists
-      const dupPub = runRelease(fixture, ["publish", "1.1.0"]);
+      const dupPub = runRelease(fixture, ["publish", "2.0.0"]);
       expect(dupPub.exitCode).not.toBe(0);
     }
   }, 30_000);

@@ -33,7 +33,7 @@ jobs:
             exit 0
           fi
           base_ref="${{ github.base_ref }}"
-          git fetch origin "$base_ref" --depth=1
+          git fetch origin "$base_ref"
           mapfile -t changed < <(git diff --name-only "origin/${base_ref}...HEAD")
           if [ "${#changed[@]}" -eq 0 ]; then
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
@@ -102,7 +102,7 @@ jobs:
         run: just test-mcp
 
   ci:
-    needs: [gate, test]
+    needs: [gate, bump, test]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04
     steps:
@@ -110,6 +110,10 @@ jobs:
         run: |
           if [ "${{ needs.gate.result }}" != "success" ]; then
             echo "::error::gate=${{ needs.gate.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.bump.result }}" != "success" ] && [ "${{ needs.bump.result }}" != "skipped" ]; then
+            echo "::error::bump=${{ needs.bump.result }}"
             exit 1
           fi
           if [ "${{ needs.test.result }}" != "success" ] && [ "${{ needs.test.result }}" != "skipped" ]; then
