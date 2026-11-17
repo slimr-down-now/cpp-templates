@@ -193,6 +193,37 @@ describe("release.ts", () => {
     const major = runRelease(fixture, ["prep", "--base", "origin/main", "--labels", "release:major"]);
     expect(major.exitCode).toBe(0);
     expect(major.stdout.toString()).toContain("bumped=2.0.0");
+
+    // Advancing origin/main to match PR's already-prepped version (e.g. 1.2.4) re-targets 1.2.4 -> 1.2.5
+    runGit(fixture.repoDir, ["checkout", "-B", "feat/base-advance", "origin/main"]);
+    const advPrep = runRelease(fixture, ["prep", "--base", "origin/main", "--commit"]);
+    expect(advPrep.exitCode).toBe(0);
+    expect(advPrep.stdout.toString()).toContain("bumped=1.2.4");
+
+    const otherDir = join(fixture.tempDir, "other-main");
+    runGit(fixture.tempDir, ["clone", fixture.remoteDir, otherDir]);
+    runGit(otherDir, ["config", "user.name", "Other"]);
+    runGit(otherDir, ["config", "user.email", "other@example.com"]);
+    writeFileSync(join(otherDir, "VERSION"), "1.2.4\n");
+    writeFileSync(join(otherDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n## v1.2.4 - 2026-11-17\n\n- Other PR\n");
+    runGit(otherDir, ["add", "VERSION", "CHANGELOG.md"]);
+    runGit(otherDir, ["commit", "-m", "other PR 1.2.4"]);
+    runGit(otherDir, ["push", "origin", "main"]);
+    runGit(fixture.repoDir, ["fetch", "origin", "main"]);
+
+    const retargetAfterBaseAdvance = runRelease(fixture, ["prep", "--base", "origin/main", "--commit"]);
+    expect(retargetAfterBaseAdvance.exitCode).toBe(0);
+    expect(retargetAfterBaseAdvance.stdout.toString()).toContain("bumped=1.2.5");
+    expect(readFileSync(join(fixture.repoDir, "VERSION"), "utf8")).toBe("1.2.5\n");
+    const advChangelog = readFileSync(join(fixture.repoDir, "CHANGELOG.md"), "utf8");
+    expect(advChangelog).toContain("## v1.2.5 - ");
+    expect(advChangelog).toContain("- Added thing");
+    expect(advChangelog).not.toContain("- Other PR");
+
+    // A fresh PR branched from 1.2.4 with empty Unreleased still fails (never steals 1.2.4 notes)
+    runGit(fixture.repoDir, ["checkout", "-B", "feat/fresh-empty", "origin/main"]);
+    const freshEmpty = runRelease(fixture, ["prep", "--base", "origin/main"]);
+    expect(freshEmpty.exitCode).not.toBe(0);
   });
 
   test("publish formula (macos linux) updates formula, commits, tags, pushes, and creates release", () => {

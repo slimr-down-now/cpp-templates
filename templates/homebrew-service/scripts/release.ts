@@ -77,6 +77,17 @@ async function readBaseVersion(repoRoot: string, repo: RepoInfo, baseRef?: strin
   return readVersionText(repo, res.stdout.toString(), `${baseRef}:${relPath}`);
 }
 
+async function readBaseChangelogNotes(repoRoot: string, baseRef: string | undefined, version: string): Promise<string | null> {
+  if (!baseRef) return null;
+  const res = await $`git show ${`${baseRef}:CHANGELOG.md`}`.cwd(repoRoot).nothrow().quiet();
+  if (res.exitCode !== 0) return null;
+  try {
+    return extractChangelogNotes(res.stdout.toString(), version);
+  } catch {
+    return null;
+  }
+}
+
 async function readPortTreeSha(repoRoot: string, name: string): Promise<string | null> {
   const res = await $`git rev-parse ${`HEAD:ports/${name}`}`.cwd(repoRoot).nothrow().quiet();
   if (res.exitCode !== 0) return null;
@@ -161,7 +172,17 @@ async function runPrep(repoRoot: string, base: string | undefined, labels: strin
     return;
   }
 
-  const canRetarget = currentVersion !== baseVersion && currentVersion !== expectedVersion;
+  let currentNotes: string | null = null;
+  try {
+    currentNotes = extractChangelogNotes(changelogRaw, currentVersion);
+  } catch {
+    currentNotes = null;
+  }
+  const baseCurrentNotes = base ? await readBaseChangelogNotes(repoRoot, base, currentVersion) : currentNotes;
+  const canRetarget =
+    currentVersion !== expectedVersion &&
+    currentNotes !== null &&
+    (currentVersion !== baseVersion || (baseCurrentNotes !== null && baseCurrentNotes !== currentNotes));
   const changelog = canRetarget
     ? retargetChangelog(changelogRaw, currentVersion, expectedVersion, date)
     : promoteChangelog(changelogRaw, expectedVersion, date).changelog;
