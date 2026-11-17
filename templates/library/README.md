@@ -39,24 +39,11 @@ int sum = lib::add(2, 3);
 ```bash
 just test            # Debug build (ASan + UBSan) and run tests
 just lint            # Check formatting and run clang-tidy
-just release patch   # Trigger release workflow and pull tag commit
 ```
 
 Extra test targets go in `CMakeLists.txt` (`add_executable` and `add_test`): unfiltered `just test` runs all via `ctest`, while `just test "<case>"` runs only `test_target`.
 
-## Develop against an unreleased lib
-
-Add `"overlay-ports"` to the consumer's `vcpkg-configuration.json`, then run `just test` or `just build` as usual (add one entry per unreleased lib):
-
-```json
-{
-  "overlay-ports": [
-    "<relative path to ~/dev/slimr/<name>/ports/slimr-<name>>"
-  ]
-}
-```
-
-Remove `"overlay-ports"` and bump the registry baseline once the lib is released. Never commit or release with `overlay-ports` set.
+See [docs/contributing.md](docs/contributing.md) for local builds, testing, unreleased-library overlays, and releases.
 
 ## Environment Variables
 

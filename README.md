@@ -20,12 +20,6 @@ Scaffold a new repository:
 just new homebrew-mcp my-server ~/dev/bdombro/my-server
 ```
 
-Check an existing repository against a template:
-
-```sh
-just check homebrew-mcp ~/dev/bdombro/my-server
-```
-
 Propagate `base/` edits into `templates/*` and validate all five templates:
 
 ```sh
@@ -41,4 +35,6 @@ Symlink the included skill so agents can create or align repositories from any w
 ln -s ~/dev/slimr/cpp-templates/skills/cpp-templates ~/.agents/skills/cpp-templates
 ```
 
-See `skills/cpp-templates/reference.md` for template selection, `manifest.json` rules, and operational guides (`create`, `align`, `release`, `linux`).
+See `skills/cpp-templates/reference.md` for template selection, shared/block/seed layout, and operational guides (`create`, `align`, `release`, `linux`).
+
+For release GitHub App, Actions secrets, `main` rulesets, and acting as the App (via [`scripts/release-bot`](scripts/release-bot)), see [base/docs/contributing.md#maintainer-setup](base/docs/contributing.md#maintainer-setup).

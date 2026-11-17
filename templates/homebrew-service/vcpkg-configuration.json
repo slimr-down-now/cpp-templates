@@ -31,7 +31,7 @@
     {
       "kind": "git",
       "repository": "https://github.com/slimr-down-now/serve.git",
-      "baseline": "38381ee822b79f9a96e080445038a4ea807e8468",
+      "baseline": "ceb69da2e208bce28e330dcfd328717b103a42ad",
       "packages": ["slimr-serve"]
     }
   ]

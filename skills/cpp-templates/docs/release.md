@@ -8,15 +8,10 @@ Outline
 
 ## Release workflow
 
-Every repository ships via:
+Releases run automatically after squash-merge to `main` (one release at a time):
 
-```sh
-just release major|minor|patch
-```
-
-`just release` triggers `.github/workflows/release.yml` with `bump`, watches the run, and pulls the release commit. Never run `test.yml` manually before `just release` (since `release.yml` runs `test.yml` first); run `test.yml` manually only when asked or to reproduce a Linux-only failure.
-
-`scripts/release.ts next <bump>` fails if `CHANGELOG.md` under `## Unreleased` is empty. `scripts/release.ts publish` promotes `## Unreleased` to `## vX.Y.Z - <date>`, adds a fresh `## Unreleased`, commits, tags, pushes atomically, and only then runs `gh release create`.
+1. Open a PR without touching `VERSION`, `CHANGELOG.md`, or `versions/`. Write the PR title (plus optional body) as the changelog entry.
+2. On merge to `main`, `release.yml` runs `scripts/release.ts plan` over commits since the last tag (skipping docs-only ranges or already-tagged `HEAD`), picks the bump from merged PR labels (`patch` default, or `release:minor` / `release:major`), writes `VERSION` / `ports/<name>/vcpkg.json`, `CHANGELOG.md` (and `vcpkg x-add-version` for libraries), commits as the GitHub App, tags `vX.Y.Z`, and runs `gh release create` (plus assets and `Formula/*.rb` / `Casks/*.rb` updates).
 
 ## App assets and formulas
 

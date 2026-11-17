@@ -27,7 +27,7 @@ just new <template> <name> <path>
 - In `justfile`, set `formula`, `endpoint`, `tools`, `test_target`, and `platforms` (`"macos linux"` or `"macos"` for desktop-browser / macOS-API apps and casks)
 - For `homebrew-*` apps, set the initial version in `VERSION` (CMake compiles it into `--version`)
 - For `library` repos, set the initial version in `ports/<name>/vcpkg.json` and run `vcpkg x-add-version`
-- Seed `CHANGELOG.md` with `## Unreleased` and an initial line before the first `just release`
+- Seed `CHANGELOG.md` with an empty `## Unreleased` heading (PRs touch no release files; `release.yml` writes entries after merge)
 
 ## Wire env vars, logs, and Bugsink
 

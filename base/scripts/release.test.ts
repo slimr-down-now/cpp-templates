@@ -98,40 +98,99 @@ function readGhCalls(fixture: Fixture): string[] {
 }
 
 describe("release.ts", () => {
-  test("next bumps patch/minor/major and fails on empty or missing Unreleased", () => {
-    const fixture = createFixture("demo-tool");
-    mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
-    writeFileSync(join(fixture.repoDir, "Formula", "demo-tool.rb"), `class DemoTool < Formula\n  homepage "https://github.com/example/demo-tool"\nend\n`);
-    writeFileSync(join(fixture.repoDir, "VERSION"), "1.2.3\n");
-    writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos linux"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Added thing\n");
-    commitAndPushInitial(fixture);
+  test("classify distinguishes docs-only files from code and runtime docs", () => {
+    const fixture = createFixture("demo-classify");
+    const docsOnly = runRelease(fixture, [
+      "classify",
+      "README.md",
+      "AGENTS.md",
+      "mcp/AGENTS.md",
+      "docs/contributing.md",
+      "CHANGELOG.md",
+      ".vscode/settings.json",
+    ]);
+    expect(docsOnly.exitCode).toBe(0);
+    expect(docsOnly.stdout.toString().trim()).toBe("true");
 
-    const patch = runRelease(fixture, ["next", "patch"]);
-    expect(patch.exitCode).toBe(0);
-    expect(patch.stdout.toString()).toBe("1.2.4\n");
+    const runtimeDoc = runRelease(fixture, ["classify", "docs/conventions.md"]);
+    expect(runtimeDoc.exitCode).toBe(0);
+    expect(runtimeDoc.stdout.toString().trim()).toBe("false");
 
-    const minor = runRelease(fixture, ["next", "minor"]);
-    expect(minor.exitCode).toBe(0);
-    expect(minor.stdout.toString()).toBe("1.3.0\n");
+    const code = runRelease(fixture, ["classify", "tests/test_main.cpp"]);
+    expect(code.exitCode).toBe(0);
+    expect(code.stdout.toString().trim()).toBe("false");
 
-    const major = runRelease(fixture, ["next", "major"]);
-    expect(major.exitCode).toBe(0);
-    expect(major.stdout.toString()).toBe("2.0.0\n");
+    const mixed = runRelease(fixture, ["classify", "README.md", "ports/slimr-json/json.hpp"]);
+    expect(mixed.exitCode).toBe(0);
+    expect(mixed.stdout.toString().trim()).toBe("false");
 
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n## v1.2.3 - 2026-01-01\n\n- Old\n");
-    const empty = runRelease(fixture, ["next", "patch"]);
-    expect(empty.exitCode).not.toBe(0);
-
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## v1.2.3 - 2026-01-01\n\n- Old\n");
-    const missing = runRelease(fixture, ["next", "patch"]);
-    expect(missing.exitCode).not.toBe(0);
+    const empty = runRelease(fixture, ["classify"]);
+    expect(empty.exitCode).toBe(0);
+    expect(empty.stdout.toString().trim()).toBe("false");
   });
 
-  test("publish formula (macos linux) updates formula/version/changelog, commits, tags, pushes, and creates release", () => {
+  test("plan computes version from labels, skips docs-only ranges and already-tagged HEAD", () => {
+    const fixture = createFixture("demo-plan");
+    mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
+    mkdirSync(join(fixture.repoDir, "src"), { recursive: true });
+    writeFileSync(join(fixture.repoDir, "Formula", "demo-plan.rb"), `class DemoPlan < Formula\n  homepage "https://github.com/example/demo-plan"\nend\n`);
+    writeFileSync(join(fixture.repoDir, "VERSION"), "1.2.3\n");
+    writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos linux"\n`);
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
+    writeFileSync(join(fixture.repoDir, "README.md"), "# demo\n");
+    commitAndPushInitial(fixture);
+    runGit(fixture.repoDir, ["tag", "-a", "v1.2.3", "-m", "v1.2.3"]);
+
+    // Already-tagged HEAD is a no-op
+    const tagged = runRelease(fixture, ["plan"]);
+    expect(tagged.exitCode).toBe(0);
+    expect(JSON.parse(tagged.stdout.toString())).toEqual({ should_release: false, version: "" });
+
+    // Docs-only commit since tag skips
+    writeFileSync(join(fixture.repoDir, "README.md"), "# demo updated\n");
+    runGit(fixture.repoDir, ["add", "README.md"]);
+    runGit(fixture.repoDir, ["commit", "-m", "docs: update readme"]);
+    const docsOnly = runRelease(fixture, ["plan"]);
+    expect(docsOnly.exitCode).toBe(0);
+    expect(JSON.parse(docsOnly.stdout.toString())).toEqual({ should_release: false, version: "" });
+
+    // Code commit since tag triggers patch by default, minor/major via labels, error on conflict
+    writeFileSync(join(fixture.repoDir, "src", "main.cpp"), "int main() { return 0; }\n");
+    runGit(fixture.repoDir, ["add", "src/main.cpp"]);
+    runGit(fixture.repoDir, ["commit", "-m", "feat: add main"]);
+
+    const patch = runRelease(fixture, ["plan", "--labels", ""]);
+    expect(patch.exitCode).toBe(0);
+    expect(JSON.parse(patch.stdout.toString())).toEqual({ should_release: true, version: "1.2.4" });
+
+    const minor = runRelease(fixture, ["plan", "--labels", "bug,release:minor"]);
+    expect(minor.exitCode).toBe(0);
+    expect(JSON.parse(minor.stdout.toString())).toEqual({ should_release: true, version: "1.3.0" });
+
+    const major = runRelease(fixture, ["plan", "--labels", "release:major"]);
+    expect(major.exitCode).toBe(0);
+    expect(JSON.parse(major.stdout.toString())).toEqual({ should_release: true, version: "2.0.0" });
+
+    const conflict = runRelease(fixture, ["plan", "--labels", "release:minor,release:major"]);
+    expect(conflict.exitCode).not.toBe(0);
+
+    // GitHub remote without --labels fails when gh api exits non-zero (never silently defaults to patch)
+    runGit(fixture.repoDir, ["remote", "set-url", "origin", "https://github.com/example/demo-plan.git"]);
+    writeFileSync(
+      join(fixture.binDir, "gh"),
+      "#!/usr/bin/env bash\necho 'gh api error' >&2\nexit 1\n",
+    );
+    chmodSync(join(fixture.binDir, "gh"), 0o755);
+    const apiFail = runRelease(fixture, ["plan"]);
+    expect(apiFail.exitCode).not.toBe(0);
+    expect(apiFail.stderr.toString()).toContain("Failed to fetch PR labels");
+  });
+
+  test("publish formula (macos linux) batches squash commits into changelog, updates formula, tags, pushes, and is a no-op when already tagged", () => {
     const fixture = createFixture("demo-mcp");
     mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
     mkdirSync(join(fixture.repoDir, "assets"), { recursive: true });
+    mkdirSync(join(fixture.repoDir, "src"), { recursive: true });
 
     const formulaInitial = `class DemoMcp < Formula
   desc "Demo MCP"
@@ -157,8 +216,18 @@ end
     writeFileSync(join(fixture.repoDir, "Formula", "demo-mcp.rb"), formulaInitial);
     writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos linux"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Ship Linux support\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
     commitAndPushInitial(fixture);
+    runGit(fixture.repoDir, ["tag", "-a", "v0.1.0", "-m", "v0.1.0"]);
+
+    // Batch two squash merges since v0.1.0
+    writeFileSync(join(fixture.repoDir, "src", "a.cpp"), "// a\n");
+    runGit(fixture.repoDir, ["add", "src/a.cpp"]);
+    runGit(fixture.repoDir, ["commit", "-m", "feat: add Linux support", "-m", "Includes static libc++ linking."]);
+
+    writeFileSync(join(fixture.repoDir, "src", "b.cpp"), "// b\n");
+    runGit(fixture.repoDir, ["add", "src/b.cpp"]);
+    runGit(fixture.repoDir, ["commit", "-m", "fix: handle empty config"]);
 
     const macBytes = "mac-tar-gz";
     const linuxBytes = "linux-tar-gz";
@@ -170,7 +239,9 @@ end
 
     expect(readFileSync(join(fixture.repoDir, "VERSION"), "utf8")).toBe("0.1.1\n");
     const changelog = readFileSync(join(fixture.repoDir, "CHANGELOG.md"), "utf8");
-    expect(changelog).toMatch(/^# Changelog\n\n## Unreleased\n\n## v0\.1\.1 - \d{4}-\d{2}-\d{2}\n\n- Ship Linux support\n/);
+    expect(changelog).toMatch(/^# Changelog\n\n## Unreleased\n\n## v0\.1\.1 - \d{4}-\d{2}-\d{2}\n\n/);
+    expect(changelog).toContain("- fix: handle empty config");
+    expect(changelog).toContain("- feat: add Linux support\n  Includes static libc++ linking.");
 
     const updatedFormula = readFileSync(join(fixture.repoDir, "Formula", "demo-mcp.rb"), "utf8");
     expect(updatedFormula).toContain('version "0.1.1"');
@@ -197,6 +268,13 @@ end
     expect(ghCalls[0]).toContain("demo-mcp-arm64-macos.tar.gz");
     expect(ghCalls[0]).toContain("demo-mcp-x64-linux.tar.gz");
     expect(ghCalls[0]).toContain("--repo example/demo-mcp");
+
+    // Repeated publish on already-tagged HEAD is a no-op
+    const headAfterRelease = runGit(fixture.repoDir, ["rev-parse", "HEAD"]);
+    const repeat = runRelease(fixture, ["publish", "0.1.1", "assets"]);
+    expect(repeat.exitCode).toBe(0);
+    expect(runGit(fixture.repoDir, ["rev-parse", "HEAD"])).toBe(headAfterRelease);
+    expect(readGhCalls(fixture).length).toBe(1);
   }, 30_000);
 
   test("publish formula toggled from macos+linux to macos removes stale on_linux block", () => {
@@ -227,7 +305,7 @@ end
     writeFileSync(join(fixture.repoDir, "Formula", "demo-mac.rb"), formulaInitial);
     writeFileSync(join(fixture.repoDir, "VERSION"), "1.0.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Drop Linux\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
     commitAndPushInitial(fixture);
 
     const macBytes = "mac-only-tar";
@@ -267,7 +345,7 @@ end
     writeFileSync(join(fixture.repoDir, "Casks", "demo-cask.rb"), caskInitial);
     writeFileSync(join(fixture.repoDir, "VERSION"), "0.2.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Update app\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
     commitAndPushInitial(fixture);
 
     const dmgBytes = "dmg-binary";
@@ -287,7 +365,7 @@ end
     expect(ghCalls[0]).toContain("demo-cask-arm64-macos.dmg");
   }, 30_000);
 
-  test("publish library (single-port and multi-port) runs vcpkg x-add-version and amends into Release commit", () => {
+  test("publish library (single-port and multi-port) adds new versions entry without touching earlier entries", () => {
     for (const multiPort of [false, true]) {
       const fixture = createFixture("slimr-demo");
       mkdirSync(join(fixture.repoDir, "ports", "slimr-demo"), { recursive: true });
@@ -307,24 +385,47 @@ end
         writeFileSync(join(fixture.repoDir, "vcpkg.json"), `{\n  "name": "slimr-demo"\n}\n`);
       }
 
+      // Seed an existing 1.0.0 versions entry to verify it is preserved
+      mkdirSync(join(fixture.repoDir, "versions", "s-"), { recursive: true });
+      const priorEntry = { "git-tree": "1111111111111111111111111111111111111111", version: "1.0.0", "port-version": 0 };
+      writeFileSync(
+        join(fixture.repoDir, "versions", "baseline.json"),
+        `${JSON.stringify({ default: { "slimr-demo": { baseline: "1.0.0", "port-version": 0 } } }, null, 2)}\n`,
+      );
+      writeFileSync(
+        join(fixture.repoDir, "versions", "s-", "slimr-demo.json"),
+        `${JSON.stringify({ versions: [priorEntry] }, null, 2)}\n`,
+      );
       writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos linux"\n`);
-      writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Bump demo lib\n");
+      writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
       commitAndPushInitial(fixture);
+      runGit(fixture.repoDir, ["tag", "-a", "v1.0.0", "-m", "v1.0.0"]);
 
-      const res = runRelease(fixture, ["publish", "1.1.0"]);
-      expect(res.exitCode).toBe(0);
+      writeFileSync(join(fixture.repoDir, "ports", "slimr-demo", "portfile.cmake"), "# updated portfile\n");
+      runGit(fixture.repoDir, ["add", "ports/slimr-demo/portfile.cmake"]);
+      runGit(fixture.repoDir, ["commit", "-m", "feat: add new API"]);
+
+      const pubRes = runRelease(fixture, ["publish", "1.1.0"]);
+      expect(pubRes.exitCode).toBe(0);
 
       const updatedManifest = readFileSync(join(fixture.repoDir, "ports", "slimr-demo", "vcpkg.json"), "utf8");
       expect(updatedManifest).toContain('"version": "1.1.0"');
-      expect(existsSync(join(fixture.repoDir, "versions", "baseline.json"))).toBe(true);
-      expect(existsSync(join(fixture.repoDir, "versions", "s-", "slimr-demo.json"))).toBe(true);
+      expect(readFileSync(join(fixture.repoDir, "CHANGELOG.md"), "utf8")).toContain("- feat: add new API");
+
+      const versionFile = JSON.parse(
+        readFileSync(join(fixture.repoDir, "versions", "s-", "slimr-demo.json"), "utf8"),
+      ) as { versions: Array<{ version: string; "git-tree": string }> };
+      expect(versionFile.versions.find((v) => v.version === "1.0.0")?.["git-tree"]).toBe(priorEntry["git-tree"]);
+      expect(versionFile.versions.some((v) => v.version === "1.1.0")).toBe(true);
 
       const committedFiles = runGit(fixture.repoDir, ["show", "--name-only", "--format=", "HEAD"]).split("\n");
       expect(committedFiles).toContain("ports/slimr-demo/vcpkg.json");
       expect(committedFiles).toContain("CHANGELOG.md");
       expect(committedFiles).toContain("versions/baseline.json");
       expect(committedFiles).toContain("versions/s-/slimr-demo.json");
-      expect(runGit(fixture.repoDir, ["rev-list", "--count", "HEAD"])).toBe("2");
+
+      const remoteTags = runGit(fixture.remoteDir, ["--git-dir=.", "tag"]);
+      expect(remoteTags).toContain("v1.1.0");
 
       const ghCalls = readGhCalls(fixture);
       expect(ghCalls.length).toBe(1);
@@ -343,7 +444,7 @@ end
     );
     writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Attempt release\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
     writeFileSync(join(fixture.repoDir, "assets", "demo-fail-arm64-macos.tar.gz"), "mac-tar");
     commitAndPushInitial(fixture);
 
@@ -363,7 +464,7 @@ end
     expect(runGit(fixture.remoteDir, ["--git-dir=.", "tag"])).toBe("");
   }, 30_000);
 
-  test("next and publish resolve Formula over Casks without touching Casks", () => {
+  test("publish resolves Formula over Casks without touching Casks", () => {
     const fixture = createFixture("demo-formula");
     mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
     mkdirSync(join(fixture.repoDir, "Casks"), { recursive: true });
@@ -388,15 +489,11 @@ end
     writeFileSync(join(fixture.repoDir, "Casks", "driver.rb"), caskInitial);
     writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Formula release\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
 
     const macBytes = "formula-mac-tar";
     writeFileSync(join(fixture.repoDir, "assets", "demo-formula-arm64-macos.tar.gz"), macBytes);
     commitAndPushInitial(fixture);
-
-    const nextRes = runRelease(fixture, ["next", "patch"]);
-    expect(nextRes.exitCode).toBe(0);
-    expect(nextRes.stdout.toString()).toBe("0.1.1\n");
 
     const pubRes = runRelease(fixture, ["publish", "0.1.1", "assets"]);
     expect(pubRes.exitCode).toBe(0);
@@ -414,7 +511,7 @@ end
     expect(ghCalls[0]).toContain("demo-formula-arm64-macos.tar.gz");
   }, 30_000);
 
-  test("next rejects multiple Formula/*.rb files even when Casks/*.rb exists", () => {
+  test("plan rejects multiple Formula/*.rb files even when Casks/*.rb exists", () => {
     const fixture = createFixture("multi-formula");
     mkdirSync(join(fixture.repoDir, "Formula"), { recursive: true });
     mkdirSync(join(fixture.repoDir, "Casks"), { recursive: true });
@@ -423,10 +520,10 @@ end
     writeFileSync(join(fixture.repoDir, "Casks", "driver.rb"), 'cask "driver" do\nend\n');
     writeFileSync(join(fixture.repoDir, "VERSION"), "0.1.0\n");
     writeFileSync(join(fixture.repoDir, "justfile"), `platforms := "macos"\n`);
-    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n\n- Test\n");
+    writeFileSync(join(fixture.repoDir, "CHANGELOG.md"), "# Changelog\n\n## Unreleased\n");
     commitAndPushInitial(fixture);
 
-    const res = runRelease(fixture, ["next", "patch"]);
+    const res = runRelease(fixture, ["plan"]);
     expect(res.exitCode).not.toBe(0);
     expect(res.stderr.toString()).toContain("Expected exactly 1 Formula/*.rb file, found 2");
   });

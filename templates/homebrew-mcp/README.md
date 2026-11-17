@@ -35,7 +35,11 @@ Add to `.mcp.json`:
 }
 ```
 
-Or call a tool directly from the CLI (`__NAME__ hello '{"name":"world"}'`).
+Or call a tool over HTTP (`/tools/<name>` is on by default):
+
+```bash
+curl -X POST http://127.0.0.1:__PORT__/tools/<name> -d '{}'
+```
 
 ## Environment Variables
 
@@ -45,4 +49,4 @@ Or call a tool directly from the CLI (`__NAME__ hello '{"name":"world"}'`).
 
 ## Development
 
-See [docs/development.md](docs/development.md) for local builds, testing, and releases.
+See [docs/contributing.md](docs/contributing.md) for local builds, testing, and releases.
