@@ -1,54 +1,49 @@
 # Align an existing repository
 
 Outline
-- Pre-port snapshots and clang-format
-- Run `just check` loop
-- Remove local linking and old CI
-- Update registries, paths, logging, and clang-tidy
-- Update docs and verify snapshots
+- Resolve repo, template, and marker
+- Diff template changes since marker
+- Pre-align MCP snapshot
+- Adapt intent and preserve customizations
+- Validate, bump marker, and commit
 
-## Pre-port snapshots and clang-format
+## Resolve repo, template, and marker
 
-Before editing an MCP repo, save snapshots to compare after the port:
+- Resolve target repository path (default `.`), ~/dev/slimr/cpp-templates, and target ref (default `HEAD` in ~/dev/slimr/cpp-templates)
+- Infer template from repository layout unless specified: `ports/` -> `library`, `Casks/` -> `homebrew-cask`, `Formula/` + `test-mcp` -> `homebrew-mcp`, `Formula/` + `daemon-start` -> `homebrew-service`, `Formula/` -> `homebrew-formula`
+- Read `<!-- cpp-templates:commit <sha> -->` from the `<!-- cpp-templates:begin/end -->` block in `AGENTS.md` (`mcp/AGENTS.md` for `whatsapp-mcp`); if missing or `unknown`, inspect `git log` to establish the baseline commit before diffing
 
-- `tools/list` and `resources/list` JSON from `<bin> http --port 0` plus `POST /mcp` `server/discover`
+## Diff template changes since marker
+
+List commits and inspect changes affecting `base/` and `templates/<template>/` since `<sha>`:
+
+```sh
+git -C ~/dev/slimr/cpp-templates log --oneline <sha>..<to_sha> -- base/ templates/<template>/
+git -C ~/dev/slimr/cpp-templates diff <sha>..<to_sha> -- base/ templates/<template>/
+```
+
+Stop if there are no relevant changes and only bump the marker if needed
+
+## Pre-align MCP snapshot
+
+For `homebrew-mcp` repositories, if the diff touches C++ sources, `CMakeLists.txt`, or build/MCP recipes, capture a pre-align snapshot before editing:
+
+- `tools/list` and `resources/list` JSON from `<bin> mcp` (or `<bin> http --port 0` + `POST /mcp` `server/discover`)
 - doctest case count
 - `just --list` output
 
-Reformat C++ sources in their own commit (`style: clang-format`), add the commit hash to `.git-blame-ignore-revs`, and exclude vendored code in `.clang-format-ignore`.
+## Adapt intent and preserve customizations
 
-## Run `just check` loop
+- Substitute `__NAME__`, `__CLASS__`, `__PORT__`, and `__DESC__` from existing repository metadata when applying changes (leave `<!-- cpp-templates:commit <to_sha> -->` for the final step)
+- Update only inside `<!-- cpp-templates:begin -->` .. `<!-- cpp-templates:end -->` in `AGENTS.md` and `docs/contributing.md`, leaving repository-owned sections outside the block intact
+- Adapt shared files (`.github/`, `scripts/`, `.clang-format`, `.clangd`, `.vscode/settings.json`, `triplets/`, `justfile` recipes, `src/log_file.hpp`) while preserving intentional repository customizations, extra recipes, and variable overrides (`formula`, `endpoint`, `tools`, `test_target`, `platforms`)
+- For `whatsapp-mcp` split layout: apply `mcp/` template files under `mcp/` (`mcp/justfile`, `mcp/AGENTS.md`, `mcp/docs/contributing.md`) and adapt root-owned `.github/`, `scripts/release.ts`, `scripts/formula-shared.ts`, root `AGENTS.md` block, and root `docs/contributing.md` block at repo root while preserving multi-formula publish and `mcp/scripts/test-mcp.ts`
+- Preserve seed files (`src/` except `src/log_file.hpp`, `tests/`, `README.md`, `CHANGELOG.md`, `.clang-tidy`) unless a template diff requires a specific migration
+- Escalate instead of guessing if a template change conflicts with an intentional repository customization
 
-Run from `~/dev/slimr/cpp-templates`:
+## Validate, bump marker, and commit
 
-```sh
-just check <template> <path>
-```
-
-Repeat until `just check` exits 0:
-
-- Copy or update `verbatim` files from `templates/<template>/` with placeholder substitution
-- Replace only the `<!-- cpp-templates:begin -->` .. `<!-- cpp-templates:end -->` blocks in `AGENTS.md` and `docs/contributing.md`; move repository-specific rules outside the block and remove hand-copied memory-safety sections
-- Align template `recipes` in `justfile` while keeping repository-specific recipes and variables (`formula`, `endpoint`, `tools`, `test_target`, `platforms`)
-
-## Remove local linking and old CI
-
-Delete legacy local-linking and release machinery:
-
-- Remove `VCPKG_OVERLAY_PORTS`, `Library/Taps` symlinks, `install-local`, `reinstall-local`, `install-github`, `publish`, `publish-local`, `--dry-run`, `run`, `check-formula`, `dev-formula.*`, `homebrew.mjs`, and `publish.mjs`
-- Replace push-triggered `.github/workflows/ci.yml` with template `test.yml` and `release.yml`, and delete the `VCPKG_REF` repo variable
-
-## Update registries, paths, logging, and clang-tidy
-
-- Switch `vcpkg-configuration.json` to `slimr-*` git registries (including transitive `slimr-*` dependencies) and run `just upgrade-deps`
-- Move XDG paths (`~/.local/share/...`, `~/.local/state/...`, `~/.config/...`) to `$(brew --prefix)/var/<name>` and `$(brew --prefix)/etc/<name>/` (always using the formula name, never a short XDG name); move secrets into env vars (`$(brew --prefix)/etc/<name>/env` for services)
-- Wire `src/log_file.hpp` and `--log-file`, compile `VERSION` into `--version` and Bugsink `release`, bind `0.0.0.0` by default on `http`, and wire the `PluginApp` env check with `--skip-checks`
-- Keep `just lint` green by disabling `.clang-tidy` checks with findings under a commented `Pending lint follow-ups` list with per-check counts; fix them later, one check per reviewed commit
-- Seed `CHANGELOG.md` with an empty `## Unreleased` heading (`release.yml` writes entries from squash-merge commits after merge)
-
-## Update docs and verify snapshots
-
-- Split port history into single-purpose commits: `style: clang-format` first, then non-behavior docs/tooling, then one commit per behavior change with its tests
-- Restructure `README.md` end-user first (what it does, install, usage, env var table, then links to `docs/`)
-- Move contributor workflow to `docs/contributing.md` (direct binary dev loop on port `2000N`, PR/CI/release flow, explicit-URL tap, dropped recipes) under `## Repository tips` outside the template block
-- Run `just build`, `just test`, `just lint`, `just test-mcp` (for `homebrew-mcp`), and verify `tools/list`, `resources/list`, and doctest case count match the pre-port snapshot; reviewers also run a base-vs-ported regression gate on temp worktrees
+- Run `just test` and `just lint`
+- If C++, build, or MCP files changed: also run `just build`, `just test-mcp` (for `homebrew-mcp`), and verify `tools/list`, `resources/list`, doctest case count, and `just --list` match the pre-align snapshot
+- Update `<!-- cpp-templates:commit <to_sha> -->` in `AGENTS.md` (`mcp/AGENTS.md` for `whatsapp-mcp`) and run `just --fmt --check --unstable` if `justfile` changed
+- Commit on a feature branch (never push directly to `main`)
