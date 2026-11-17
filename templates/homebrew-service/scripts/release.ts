@@ -1,38 +1,91 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { $ } from "bun";
 import {
-  applyBump, assertSemver, assetFilename, type Bump, detectRepo, errorMessage, type PlatformAsset,
-  promoteChangelog, readPlatforms, readVersion, type RepoInfo, resolveGitHubRepo, sha256File,
-  updateCaskRuby, updateFormulaRuby,
+  applyBump, assertSemver, assetFilename, type Bump, bumpFromLabels, detectRepo, errorMessage,
+  extractChangelogNotes, isDocsOnlyFiles, type PlatformAsset, promoteChangelog, readPlatforms,
+  readVersion, type RepoInfo, resolveGitHubRepo, sha256File, updateCaskRuby, updateFormulaRuby,
 } from "./formula-shared.ts";
 
 type Command =
+  | { kind: "classify"; files: string[] }
   | { kind: "next"; bump: Bump }
+  | { kind: "prep"; base?: string; labels: string[]; commit: boolean }
   | { kind: "publish"; version: string; assetsDir: string };
 
 export function parseArgs(args: string[]): Command {
+  if (args[0] === "classify") {
+    return { kind: "classify", files: args.slice(1) };
+  }
   if (args[0] === "next" && args.length === 2) {
     const bump = args[1];
     if (bump === "major" || bump === "minor" || bump === "patch") {
       return { kind: "next", bump };
     }
   }
+  if (args[0] === "prep") {
+    let base: string | undefined;
+    let labels: string[] = [];
+    let commit = false;
+    for (let i = 1; i < args.length; i++) {
+      if (args[i] === "--base") {
+        base = args[++i];
+        if (!base) throw new Error("--base requires a value");
+      } else if (args[i] === "--labels") {
+        const raw = args[++i] ?? "";
+        labels = raw.split(",").map((s) => s.trim()).filter(Boolean);
+      } else if (args[i] === "--commit") {
+        commit = true;
+      } else {
+        throw new Error(`Unknown prep argument: ${args[i]}`);
+      }
+    }
+    return { kind: "prep", base, labels, commit };
+  }
   if (args[0] === "publish" && (args.length === 2 || args.length === 3)) {
     return { kind: "publish", version: args[1], assetsDir: args[2] ?? "dist" };
   }
-  throw new Error("Usage: release.ts <next <major|minor|patch> | publish <version> [assets-dir]>");
+  throw new Error(
+    "Usage: release.ts <classify <files...> | next <major|minor|patch> | prep [--base <ref>] [--labels <csv>] [--commit] | publish <version> [assets-dir]>",
+  );
+}
+
+function readVersionText(repo: RepoInfo, raw: string, label: string): string {
+  if (repo.kind === "library") {
+    const manifest = JSON.parse(raw) as { version?: unknown };
+    if (typeof manifest.version !== "string") {
+      throw new Error(`${label} must contain a string "version" field.`);
+    }
+    return assertSemver(manifest.version, label);
+  }
+  return assertSemver(raw, label);
 }
 
 function readCurrentVersion(repoRoot: string, repo: RepoInfo): string {
-  if (repo.kind === "library") {
-    const manifest = JSON.parse(readFileSync(repo.portManifestPath!, "utf8")) as { version?: unknown };
-    if (typeof manifest.version !== "string") {
-      throw new Error(`${repo.portManifestPath} must contain a string "version" field.`);
-    }
-    return assertSemver(manifest.version, repo.portManifestPath);
+  const versionPath = repo.kind === "library" ? repo.portManifestPath! : join(repoRoot, "VERSION");
+  return readVersionText(repo, readFileSync(versionPath, "utf8"), versionPath);
+}
+
+async function readBaseVersion(repoRoot: string, repo: RepoInfo, baseRef?: string): Promise<string> {
+  if (!baseRef) return readCurrentVersion(repoRoot, repo);
+  const relPath = repo.kind === "library" ? relative(repoRoot, repo.portManifestPath!) : "VERSION";
+  const res = await $`git show ${`${baseRef}:${relPath}`}`.cwd(repoRoot).nothrow().quiet();
+  if (res.exitCode !== 0) {
+    return readCurrentVersion(repoRoot, repo);
   }
-  return readVersion(join(repoRoot, "VERSION"));
+  return readVersionText(repo, res.stdout.toString(), `${baseRef}:${relPath}`);
+}
+
+function hasLibraryVersionEntry(repoRoot: string, name: string, version: string): boolean {
+  const baselinePath = join(repoRoot, "versions", "baseline.json");
+  const entryPath = join(repoRoot, "versions", `${name.charAt(0)}-`, `${name}.json`);
+  if (!existsSync(baselinePath) || !existsSync(entryPath)) return false;
+  try {
+    const entry = JSON.parse(readFileSync(entryPath, "utf8")) as { versions?: Array<{ version?: string }> };
+    return Array.isArray(entry.versions) && entry.versions.some((v) => v.version === version);
+  } catch {
+    return false;
+  }
 }
 
 async function runNext(repoRoot: string, bump: Bump): Promise<void> {
@@ -44,18 +97,70 @@ async function runNext(repoRoot: string, bump: Bump): Promise<void> {
   process.stdout.write(`${nextVersion}\n`);
 }
 
+async function runPrep(repoRoot: string, base: string | undefined, labels: string[], commit: boolean): Promise<void> {
+  const repo = detectRepo(repoRoot);
+  const bump = bumpFromLabels(labels);
+  const baseVersion = await readBaseVersion(repoRoot, repo, base);
+  const expectedVersion = applyBump(baseVersion, bump);
+  const currentVersion = readCurrentVersion(repoRoot, repo);
+  const changelogPath = join(repoRoot, "CHANGELOG.md");
+  const changelogRaw = readFileSync(changelogPath, "utf8");
+
+  let changelogReady = false;
+  try {
+    extractChangelogNotes(changelogRaw, expectedVersion);
+    changelogReady = true;
+  } catch {
+    changelogReady = false;
+  }
+
+  const versionsReady = repo.kind !== "library" || hasLibraryVersionEntry(repoRoot, repo.name, expectedVersion);
+  if (currentVersion === expectedVersion && changelogReady && versionsReady) {
+    console.log(`already_prepped=${expectedVersion}`);
+    return;
+  }
+
+  const { changelog } = promoteChangelog(changelogRaw, expectedVersion, new Date().toISOString().slice(0, 10));
+  writeFileSync(changelogPath, changelog);
+
+  if (repo.kind === "library") {
+    const manifestPath = repo.portManifestPath!;
+    const manifestRaw = readFileSync(manifestPath, "utf8");
+    if (!/"version"\s*:\s*"[^"]*"/.test(manifestRaw)) {
+      throw new Error(`${manifestPath} must contain a "version" field.`);
+    }
+    writeFileSync(manifestPath, manifestRaw.replace(/("version"\s*:\s*)"[^"]*"/, `$1${JSON.stringify(expectedVersion)}`));
+    if (commit) {
+      await $`git add -- ${relative(repoRoot, manifestPath)} CHANGELOG.md`.cwd(repoRoot).quiet();
+      await $`git commit -m ${`Release prep v${expectedVersion}`}`.cwd(repoRoot).quiet();
+      mkdirSync(join(repoRoot, "versions"), { recursive: true });
+      await $`vcpkg x-add-version ${repo.name} ${`--x-builtin-ports-root=${join(repoRoot, "ports")}`} ${`--x-builtin-registry-versions-dir=${join(repoRoot, "versions")}`} --verbose`
+        .cwd(repoRoot)
+        .quiet();
+      await $`git add -- versions`.cwd(repoRoot).quiet();
+      await $`git commit --amend --no-edit`.cwd(repoRoot).quiet();
+    }
+  } else {
+    writeFileSync(join(repoRoot, "VERSION"), `${expectedVersion}\n`);
+    if (commit) {
+      await $`git add -- VERSION CHANGELOG.md`.cwd(repoRoot).quiet();
+      await $`git commit -m ${`Release prep v${expectedVersion}`}`.cwd(repoRoot).quiet();
+    }
+  }
+  console.log(`bumped=${expectedVersion}`);
+}
+
 async function runPublish(repoRoot: string, versionArg: string, assetsDirArg: string): Promise<void> {
   const version = assertSemver(versionArg, "Release version");
   const tag = `v${version}`;
   const repo = detectRepo(repoRoot);
-  readCurrentVersion(repoRoot, repo);
+  const currentVersion = readCurrentVersion(repoRoot, repo);
+  if (currentVersion !== version) {
+    throw new Error(`Expected repo version ${version}, found ${currentVersion}. Run prep in the PR before publishing.`);
+  }
 
   const changelogPath = join(repoRoot, "CHANGELOG.md");
-  const { changelog, notes } = promoteChangelog(
-    readFileSync(changelogPath, "utf8"),
-    version,
-    new Date().toISOString().slice(0, 10),
-  );
+  const notes = extractChangelogNotes(readFileSync(changelogPath, "utf8"), version);
 
   const top = (await $`git rev-parse --show-toplevel`.cwd(repoRoot).quiet().text()).trim();
   if (realpathSync(top) !== realpathSync(repoRoot)) {
@@ -96,11 +201,11 @@ async function runPublish(repoRoot: string, versionArg: string, assetsDirArg: st
       else linuxAsset = asset;
     }
 
-    writeFileSync(join(repoRoot, "VERSION"), `${version}\n`);
-    writeFileSync(changelogPath, changelog);
     writeFileSync(rubyPath, updateFormulaRuby(rubyContent, { version, repoUrl, macos: macosAsset, linux: linuxAsset }));
-    await $`git add -- VERSION CHANGELOG.md ${`Formula/${repo.name}.rb`}`.cwd(repoRoot).quiet();
+    await $`git add -- ${`Formula/${repo.name}.rb`}`.cwd(repoRoot).quiet();
     await $`git commit -m ${`Release ${tag}`}`.cwd(repoRoot).quiet();
+    await $`git tag -a ${tag} -m ${tag}`.cwd(repoRoot).quiet();
+    await $`git push --atomic origin ${`HEAD:refs/heads/${branch}`} ${`refs/tags/${tag}`}`.cwd(repoRoot).quiet();
   } else if (repo.kind === "cask") {
     readPlatforms(repoRoot, "cask");
     const rubyPath = repo.rubyPath!;
@@ -119,33 +224,16 @@ async function runPublish(repoRoot: string, versionArg: string, assetsDirArg: st
     const assetPath = join(assetsDir, assetName);
     assetPaths.push(assetPath);
 
-    writeFileSync(join(repoRoot, "VERSION"), `${version}\n`);
-    writeFileSync(changelogPath, changelog);
     writeFileSync(rubyPath, updateCaskRuby(rubyContent, { version, repoUrl, assetName, sha256: sha256File(assetPath) }));
-    await $`git add -- VERSION CHANGELOG.md ${`Casks/${repo.name}.rb`}`.cwd(repoRoot).quiet();
+    await $`git add -- ${`Casks/${repo.name}.rb`}`.cwd(repoRoot).quiet();
     await $`git commit -m ${`Release ${tag}`}`.cwd(repoRoot).quiet();
+    await $`git tag -a ${tag} -m ${tag}`.cwd(repoRoot).quiet();
+    await $`git push --atomic origin ${`HEAD:refs/heads/${branch}`} ${`refs/tags/${tag}`}`.cwd(repoRoot).quiet();
   } else {
     ownerRepo = resolveGitHubRepo(origin);
-    const manifestPath = repo.portManifestPath!;
-    const manifestRaw = readFileSync(manifestPath, "utf8");
-    if (!/"version"\s*:\s*"[^"]*"/.test(manifestRaw)) {
-      throw new Error(`${manifestPath} must contain a "version" field.`);
-    }
-    writeFileSync(manifestPath, manifestRaw.replace(/("version"\s*:\s*)"[^"]*"/, `$1${JSON.stringify(version)}`));
-    writeFileSync(changelogPath, changelog);
-    await $`git add -- ${`ports/${repo.name}/vcpkg.json`} CHANGELOG.md`.cwd(repoRoot).quiet();
-    await $`git commit -m ${`Release ${tag}`}`.cwd(repoRoot).quiet();
-
-    mkdirSync(join(repoRoot, "versions"), { recursive: true });
-    await $`vcpkg x-add-version ${repo.name} ${`--x-builtin-ports-root=${join(repoRoot, "ports")}`} ${`--x-builtin-registry-versions-dir=${join(repoRoot, "versions")}`} --verbose`
-      .cwd(repoRoot)
-      .quiet();
-    await $`git add -- versions`.cwd(repoRoot).quiet();
-    await $`git commit --amend --no-edit`.cwd(repoRoot).quiet();
+    await $`git tag -a ${tag} -m ${tag}`.cwd(repoRoot).quiet();
+    await $`git push origin ${`refs/tags/${tag}`}`.cwd(repoRoot).quiet();
   }
-
-  await $`git tag -a ${tag} -m ${tag}`.cwd(repoRoot).quiet();
-  await $`git push --atomic origin ${`HEAD:refs/heads/${branch}`} ${`refs/tags/${tag}`}`.cwd(repoRoot).quiet();
 
   const notesPath = join(repoRoot, ".git", "release-notes.md");
   writeFileSync(notesPath, notes);
@@ -172,8 +260,12 @@ async function runPublish(repoRoot: string, versionArg: string, assetsDirArg: st
 async function main(): Promise<void> {
   const command = parseArgs(process.argv.slice(2));
   const repoRoot = process.cwd();
-  if (command.kind === "next") {
+  if (command.kind === "classify") {
+    process.stdout.write(`${isDocsOnlyFiles(command.files)}\n`);
+  } else if (command.kind === "next") {
     await runNext(repoRoot, command.bump);
+  } else if (command.kind === "prep") {
+    await runPrep(repoRoot, command.base, command.labels, command.commit);
   } else {
     await runPublish(repoRoot, command.version, command.assetsDir);
   }

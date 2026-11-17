@@ -49,4 +49,4 @@ Services load `$(brew --prefix)/etc/__NAME__/env` (`chmod 600`) before starting.
 
 ## Development
 
-See [docs/development.md](docs/development.md) for local builds, testing, and releases.
+See [docs/contributing.md](docs/contributing.md) for local builds, testing, and releases.

@@ -13,7 +13,7 @@
     "triplets/arm64-osx.cmake",
     "triplets/x64-linux.cmake"
   ],
-  "blocks": ["AGENTS.md"],
+  "blocks": ["AGENTS.md", "docs/contributing.md"],
   "seed": [
     ".clang-format-ignore",
     ".clang-tidy",
@@ -48,7 +48,6 @@
     "fmt",
     "install",
     "lint",
-    "release",
     "test",
     "uninstall",
     "upgrade-deps"

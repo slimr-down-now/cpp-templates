@@ -13,7 +13,8 @@
     "triplets/x64-linux.cmake"
   ],
   "blocks": [
-    "AGENTS.md"
+    "AGENTS.md",
+    "docs/contributing.md"
   ],
   "seed": [
     ".clang-format-ignore",
@@ -38,7 +39,6 @@
     "doctor",
     "fmt",
     "lint",
-    "release",
     "test",
     "upgrade-deps"
   ]

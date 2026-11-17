@@ -8,15 +8,11 @@ Outline
 
 ## Release workflow
 
-Every repository ships via:
+Releases run automatically on merge to `main`:
 
-```sh
-just release major|minor|patch
-```
-
-`just release` triggers `.github/workflows/release.yml` with `bump`, watches the run, and pulls the release commit. Never run `test.yml` manually before `just release` (since `release.yml` runs `test.yml` first); run `test.yml` manually only when asked or to reproduce a Linux-only failure.
-
-`scripts/release.ts next <bump>` fails if `CHANGELOG.md` under `## Unreleased` is empty. `scripts/release.ts publish` promotes `## Unreleased` to `## vX.Y.Z - <date>`, adds a fresh `## Unreleased`, commits, tags, pushes atomically, and only then runs `gh release create`.
+1. Add release notes under `## Unreleased` in `CHANGELOG.md` on the PR branch.
+2. On `pull_request`, `test.yml` runs `scripts/release.ts prep` (`patch` by default, or `release:minor` / `release:major` PR labels) to bump `VERSION` or `ports/<name>/vcpkg.json`, promote `CHANGELOG.md` to `## vX.Y.Z - <date>`, and run `vcpkg x-add-version` for libraries. Docs-only PRs skip builds and release nothing.
+3. On merge to `main`, `release.yml` tags `vX.Y.Z`, runs `gh release create`, and (for formulas/casks) updates `Formula/*.rb` or `Casks/*.rb`.
 
 ## App assets and formulas
 

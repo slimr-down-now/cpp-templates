@@ -14,7 +14,7 @@
     "triplets/arm64-osx.cmake",
     "triplets/x64-linux.cmake"
   ],
-  "blocks": ["AGENTS.md"],
+  "blocks": ["AGENTS.md", "docs/contributing.md"],
   "seed": [
     ".claude-plugin/**",
     ".clang-format-ignore",
@@ -51,7 +51,6 @@
     "fmt",
     "install",
     "lint",
-    "release",
     "test",
     "test-mcp",
     "uninstall",

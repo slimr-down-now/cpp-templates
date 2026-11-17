@@ -3,6 +3,7 @@ import path from "node:path";
 
 const BEGIN_MARKER = "<!-- cpp-templates:begin -->";
 const END_MARKER = "<!-- cpp-templates:end -->";
+const BLOCK_FILES = new Set(["AGENTS.md", "docs/contributing.md"]);
 const TEMPLATE_OWNED = new Set([
   "justfile",
   "CMakeLists.txt",
@@ -71,15 +72,15 @@ for (const tmpl of templates) {
     const srcContent = readFileSync(srcPath, "utf8");
     const srcMode = statSync(srcPath).mode & 0o777;
 
-    if (rel === "AGENTS.md") {
+    if (BLOCK_FILES.has(rel)) {
       const baseRange = findBlockRange(srcContent);
       if (!baseRange) {
-        die("base/AGENTS.md is missing valid cpp-templates block markers");
+        die(`base/${rel} is missing valid cpp-templates block markers`);
       }
       const baseBlock = srcContent.slice(baseRange.start, baseRange.end);
       if (!existsSync(destPath)) {
         if (checkOnly) {
-          drifts.push(`missing ${tmpl}/AGENTS.md`);
+          drifts.push(`missing ${tmpl}/${rel}`);
         } else {
           mkdirSync(path.dirname(destPath), { recursive: true });
           writeFileSync(destPath, srcContent, "utf8");
@@ -90,13 +91,13 @@ for (const tmpl of templates) {
       const destContent = readFileSync(destPath, "utf8");
       const destRange = findBlockRange(destContent);
       if (!destRange) {
-        drifts.push(`${tmpl}/AGENTS.md is missing valid cpp-templates block markers`);
+        drifts.push(`${tmpl}/${rel} is missing valid cpp-templates block markers`);
         continue;
       }
       const destBlock = destContent.slice(destRange.start, destRange.end);
       if (destBlock !== baseBlock) {
         if (checkOnly) {
-          drifts.push(`block drift in ${tmpl}/AGENTS.md`);
+          drifts.push(`block drift in ${tmpl}/${rel}`);
         } else {
           const updated = destContent.slice(0, destRange.start) + baseBlock + destContent.slice(destRange.end);
           writeFileSync(destPath, updated, "utf8");

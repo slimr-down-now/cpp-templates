@@ -1,33 +1,28 @@
 name: release
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        type: choice
-        required: true
-        default: patch
-        options: [patch, minor, major]
+  push:
+    branches: [main]
 concurrency: release
 permissions:
   contents: write
-  actions: read
 
 jobs:
   plan:
     runs-on: ubuntu-24.04
     outputs:
+      should_release: ${{ steps.plan.outputs.should_release }}
       version: ${{ steps.plan.outputs.version }}
-      runners: ${{ steps.plan.outputs.runners }}
+      runners: ${{ steps.plan.outputs.runners || '[]' }}
       kind: ${{ steps.plan.outputs.kind }}
       name: ${{ steps.plan.outputs.name }}
-      run_test: ${{ steps.test-check.outputs.run_test }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: extractions/setup-just@v3
       - uses: oven-sh/setup-bun@v2
       - id: plan
         run: |
-          version="$(bun scripts/release.ts next "${{ inputs.bump }}")"
           runners="$(just --evaluate platforms | jq -Rc 'split(" ") | map(select(length > 0) | {macos: "macos-26", linux: "ubuntu-24.04"}[.] // error("unknown platform: \(.)"))')"
           shopt -s nullglob
           formulas=(Formula/*.rb)
@@ -36,12 +31,15 @@ jobs:
           if [ "${#formulas[@]}" -eq 1 ]; then
             kind="formula"
             name="$(basename "${formulas[0]}" .rb)"
+            version="$(tr -d '[:space:]' < VERSION)"
           elif [ "${#casks[@]}" -eq 1 ]; then
             kind="cask"
             name="$(basename "${casks[0]}" .rb)"
+            version="$(tr -d '[:space:]' < VERSION)"
           elif [ "${#ports[@]}" -eq 1 ]; then
             kind="library"
             name="$(basename "$(dirname "${ports[0]}")")"
+            version="$(jq -r '.version' "${ports[0]}")"
           elif [ "${#ports[@]}" -gt 1 ]; then
             kind="library"
             name="$(just --evaluate formula 2>/dev/null || true)"
@@ -51,42 +49,33 @@ jobs:
             if [ -z "$name" ]; then
               name="$(basename "$GITHUB_WORKSPACE")"
             fi
+            version="$(jq -r '.version' "ports/${name}/vcpkg.json")"
           else
             echo "::error::Cannot determine repository kind (Formula/*.rb, Casks/*.rb, or ports/*/vcpkg.json)"
             exit 1
           fi
+          should_release=true
+          if git ls-remote --exit-code origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "Tag v${version} already exists on origin; skipping release"
+            should_release=false
+          elif git rev-parse --verify HEAD~1 >/dev/null 2>&1; then
+            mapfile -t changed < <(git diff --name-only HEAD~1..HEAD)
+            if [ "${#changed[@]}" -gt 0 ] && [ "$(bun scripts/release.ts classify "${changed[@]}")" = "true" ]; then
+              echo "Docs-only merge; skipping release"
+              should_release=false
+            fi
+          fi
           {
+            echo "should_release=$should_release"
             echo "version=$version"
             echo "runners=$runners"
             echo "kind=$kind"
             echo "name=$name"
           } >> "$GITHUB_OUTPUT"
-      - id: test-check
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          run_test=true
-          if runs_json="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow test.yml --commit "$GITHUB_SHA" --status success --limit 1 --json databaseId,event,headBranch 2>&1)"; then
-            if printf '%s' "$runs_json" | jq -e 'length > 0' >/dev/null 2>&1; then
-              run_test=false
-              match="$(printf '%s' "$runs_json" | jq -r '.[0] | "id=\(.databaseId) event=\(.event) branch=\(.headBranch)"')"
-              echo "Skipping test job; found passing test.yml run ($match)"
-            else
-              echo "No passing test.yml run for $GITHUB_SHA; running test job"
-            fi
-          else
-            echo "::warning::gh run list failed ($runs_json); falling back to running test job"
-          fi
-          echo "run_test=$run_test" >> "$GITHUB_OUTPUT"
-
-  test:
-    needs: plan
-    if: needs.plan.outputs.run_test == 'true'
-    uses: ./.github/workflows/test.yml
 
   build:
-    needs: [plan, test]
-    if: always() && !cancelled() && needs.plan.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && needs.plan.outputs.kind != 'library'
+    needs: plan
+    if: needs.plan.outputs.should_release == 'true' && needs.plan.outputs.kind != 'library'
     strategy:
       fail-fast: false
       matrix:
@@ -98,9 +87,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - name: Build release
-        run: |
-          printf '%s\n' "${{ needs.plan.outputs.version }}" > VERSION
-          just build
+        run: just build
       - name: Package release asset
         run: |
           name="${{ needs.plan.outputs.name }}"
@@ -144,21 +131,22 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [plan, test, build]
-    if: always() && !cancelled() && needs.plan.result == 'success' && (needs.test.result == 'success' || needs.test.result == 'skipped') && (needs.build.result == 'success' || needs.build.result == 'skipped')
+    needs: [plan, build]
+    if: always() && !cancelled() && needs.plan.result == 'success' && needs.plan.outputs.should_release == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-24.04
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        if: needs.plan.outputs.kind != 'library'
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ needs.plan.outputs.kind != 'library' && steps.app-token.outputs.token || github.token }}
       - uses: extractions/setup-just@v3
-        if: needs.plan.outputs.kind != 'library'
       - uses: oven-sh/setup-bun@v2
-        if: needs.plan.outputs.kind != 'library'
-      - uses: ./.github/actions/setup
-        if: needs.plan.outputs.kind == 'library'
       - uses: actions/download-artifact@v4
         if: needs.plan.outputs.kind != 'library'
         with:
@@ -168,4 +156,6 @@ jobs:
         run: |
           git config user.name "$(git log -1 --format='%an')"
           git config user.email "$(git log -1 --format='%ae')"
-      - run: bun scripts/release.ts publish "${{ needs.plan.outputs.version }}" assets
+      - env:
+          GH_TOKEN: ${{ needs.plan.outputs.kind != 'library' && steps.app-token.outputs.token || github.token }}
+        run: bun scripts/release.ts publish "${{ needs.plan.outputs.version }}" assets

@@ -28,7 +28,7 @@ just check <template> <path>
 Repeat until `just check` exits 0:
 
 - Copy or update `verbatim` files from `templates/<template>/` with placeholder substitution
-- Replace only the `<!-- cpp-templates:begin -->` .. `<!-- cpp-templates:end -->` block in `AGENTS.md`; move repository-specific rules outside the block and remove hand-copied memory-safety sections
+- Replace only the `<!-- cpp-templates:begin -->` .. `<!-- cpp-templates:end -->` blocks in `AGENTS.md` and `docs/contributing.md`; move repository-specific rules outside the block and remove hand-copied memory-safety sections
 - Align template `recipes` in `justfile` while keeping repository-specific recipes and variables (`formula`, `endpoint`, `tools`, `test_target`, `platforms`)
 
 ## Remove local linking and old CI
@@ -50,5 +50,5 @@ Delete legacy local-linking and release machinery:
 
 - Split port history into single-purpose commits: `style: clang-format` first, then non-behavior docs/tooling, then one commit per behavior change with its tests
 - Restructure `README.md` end-user first (what it does, install, usage, env var table, then links to `docs/`)
-- Move contributor workflow to `docs/development.md` (direct binary dev loop on port `2000N`, `just release`, explicit-URL tap, dropped recipes)
+- Move contributor workflow to `docs/contributing.md` (direct binary dev loop on port `2000N`, PR/CI/release flow, explicit-URL tap, dropped recipes) under `## Repository tips` outside the template block
 - Run `just build`, `just test`, `just lint`, `just test-mcp` (for `homebrew-mcp`), and verify `tools/list`, `resources/list`, and doctest case count match the pre-port snapshot; reviewers also run a base-vs-ported regression gate on temp worktrees

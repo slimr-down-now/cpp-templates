@@ -248,6 +248,60 @@ export function applyBump(version: string, bump: Bump): string {
   return `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
 }
 
+const DOCS_ONLY_EXACT = new Set([
+  "README.md",
+  "AGENTS.md",
+  "CHANGELOG.md",
+  "LICENSE",
+  "docs/contributing.md",
+  "mcp/docs/contributing.md",
+  "docs/architecture.md",
+  "docs/development.md",
+  "client/docs/development.md",
+  ".clangd",
+  ".gitignore",
+  ".git-blame-ignore-revs",
+  ".clang-format-ignore",
+]);
+
+export function isDocsOnlyPath(file: string): boolean {
+  if (DOCS_ONLY_EXACT.has(file)) return true;
+  if (/^[^/]+\/AGENTS\.md$/.test(file)) return true;
+  if (file.startsWith(".vscode/")) return true;
+  return false;
+}
+
+export function isDocsOnlyFiles(files: string[]): boolean {
+  return files.length > 0 && files.every(isDocsOnlyPath);
+}
+
+export function bumpFromLabels(labels: string[]): Bump {
+  const normalized = new Set(labels.map((l) => l.trim()).filter(Boolean));
+  const hasMajor = normalized.has("release:major");
+  const hasMinor = normalized.has("release:minor");
+  if (hasMajor && hasMinor) {
+    throw new Error("Conflicting release labels: release:major and release:minor.");
+  }
+  if (hasMajor) return "major";
+  if (hasMinor) return "minor";
+  return "patch";
+}
+
+export function extractChangelogNotes(content: string, version: string): string {
+  const normalized = content.replaceAll("\r\n", "\n");
+  const escaped = version.replaceAll(".", "\\.");
+  const heading = new RegExp(`^## v${escaped}(?:\\s+-\\s+.*)?$`, "m");
+  const match = normalized.match(heading);
+  if (!match || match.index === undefined) {
+    throw new Error(`CHANGELOG.md does not contain a ## v${version} section.`);
+  }
+  const body = normalized.slice(match.index + match[0].length).split(/^## /m)[0].trim();
+  if (!body) {
+    throw new Error(`CHANGELOG.md section ## v${version} is empty.`);
+  }
+  return `${body}\n`;
+}
+
 export function promoteChangelog(content: string, version: string, date: string): { changelog: string; notes: string } {
   const normalized = content.replaceAll("\r\n", "\n");
   const heading = /^## Unreleased[ \t]*$/gm;
