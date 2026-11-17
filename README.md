@@ -43,4 +43,4 @@ ln -s ~/dev/slimr/cpp-templates/skills/cpp-templates ~/.agents/skills/cpp-templa
 
 See `skills/cpp-templates/reference.md` for template selection, `manifest.json` rules, and operational guides (`create`, `align`, `release`, `linux`).
 
-For release GitHub App, Actions secrets, `main` rulesets, and acting as the App, see [base/docs/contributing.md#maintainer-setup](base/docs/contributing.md#maintainer-setup).
+For release GitHub App, Actions secrets, `main` rulesets, and acting as the App (via [`scripts/release-bot`](scripts/release-bot)), see [base/docs/contributing.md#maintainer-setup](base/docs/contributing.md#maintainer-setup).

@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: release-bot [--owner <owner>] [--repo <owner>/<repo>] <subcommand> [args...]
+
+Act as the release GitHub App using a short-lived installation token that is
+automatically revoked on exit.
+
+Flags (before subcommand):
+  --owner <owner>        Installation owner (default: origin owner)
+  --repo <owner>/<repo>  Target repo for push-main (default: origin)
+  -h, --help             Show this help
+
+Subcommands:
+  push-main [args...]    Push HEAD to main via App token (passes extra git push args)
+  gh <args...>           Run a single gh command with GH_TOKEN set
+  shell                  Start $SHELL with GH_TOKEN exported; revokes on exit
+
+Environment:
+  RELEASE_APP_ID         GitHub App ID (required)
+  RELEASE_APP_KEY        Path to App private key PEM file (required)
+EOF
+}
+
+err() {
+  printf 'release-bot: %s\n' "$1" >&2
+  exit 1
+}
+
+TOKEN=""
+cleanup() {
+  local rc=$?
+  if [[ -n "${TOKEN:-}" ]]; then
+    curl -fsS -X DELETE \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Accept: application/vnd.github+json" \
+      "https://api.github.com/installation/token" >/dev/null 2>&1 || true
+    TOKEN=""
+  fi
+  unset GH_TOKEN TOKEN 2>/dev/null || true
+  return "$rc"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [[ $# -eq 0 ]]; then
+  usage
+  exit 1
+fi
+
+owner=""
+repo=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --owner)
+      [[ $# -ge 2 && -n "$2" ]] || err "--owner requires a value"
+      owner="$2"
+      shift 2
+      ;;
+    --owner=*)
+      owner="${1#--owner=}"
+      [[ -n "$owner" ]] || err "--owner requires a value"
+      shift
+      ;;
+    --repo)
+      [[ $# -ge 2 && -n "$2" ]] || err "--repo requires a value"
+      repo="$2"
+      shift 2
+      ;;
+    --repo=*)
+      repo="${1#--repo=}"
+      [[ -n "$repo" ]] || err "--repo requires a value"
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      err "unknown flag: $1"
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ $# -ge 1 ]] || err "missing subcommand (run with -h for usage)"
+cmd="$1"
+shift
+
+case "$cmd" in
+  push-main|gh|shell) ;;
+  *) err "unknown subcommand: $cmd" ;;
+esac
+
+if [[ "$cmd" == "gh" && $# -eq 0 ]]; then
+  err "gh requires at least one argument"
+fi
+if [[ "$cmd" == "shell" && $# -gt 0 ]]; then
+  err "shell takes no arguments"
+fi
+
+for tool in openssl curl jq git gh; do
+  command -v "$tool" >/dev/null 2>&1 || err "missing required tool: $tool"
+done
+
+[[ -n "${RELEASE_APP_ID:-}" ]] || err "RELEASE_APP_ID is not set"
+[[ -n "${RELEASE_APP_KEY:-}" ]] || err "RELEASE_APP_KEY is not set"
+[[ -r "$RELEASE_APP_KEY" ]] || err "RELEASE_APP_KEY is not readable: $RELEASE_APP_KEY"
+
+parse_origin() {
+  local url
+  url=$(git remote get-url origin 2>/dev/null) || return 1
+  url="${url%.git}"
+  if [[ "$url" =~ github\.com[:/]([^/]+)/([^/]+)$ ]]; then
+    printf '%s/%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+    return 0
+  fi
+  return 1
+}
+
+if [[ -n "$repo" ]]; then
+  [[ "$repo" == */* && "$repo" != */ && "$repo" != /* ]] || err "--repo must be <owner>/<repo>"
+elif [[ "$cmd" == "push-main" ]]; then
+  repo=$(parse_origin) || err "cannot determine target repo from origin; pass --repo <owner>/<repo>"
+fi
+
+if [[ -z "$owner" ]]; then
+  if [[ -n "$repo" ]]; then
+    owner="${repo%%/*}"
+  else
+    origin_repo=$(parse_origin) || err "cannot determine owner from origin; pass --owner <owner>"
+    owner="${origin_repo%%/*}"
+  fi
+fi
+
+b64url() {
+  openssl base64 -A | tr '+/' '-_' | tr -d '='
+}
+
+now=$(date +%s)
+hdr=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+pay=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$RELEASE_APP_ID" | b64url)
+sig=$(printf '%s.%s' "$hdr" "$pay" | openssl dgst -sha256 -sign "$RELEASE_APP_KEY" | b64url) || err "failed to sign App JWT"
+jwt="${hdr}.${pay}.${sig}"
+
+inst_json=$(curl -fsS -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/app/installations?per_page=100") || err "failed to list App installations"
+inst_id=$(jq -r --arg o "$owner" '.[] | select(.account.login == $o) | .id' <<<"$inst_json" | head -n 1)
+[[ -n "$inst_id" ]] || err "App is not installed on owner '$owner'"
+
+resp=$(curl -fsS -X POST -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/app/installations/${inst_id}/access_tokens") || err "failed to mint installation token for '$owner'"
+unset jwt hdr pay sig
+
+TOKEN=$(jq -r '.token // empty' <<<"$resp")
+unset resp
+[[ -n "$TOKEN" ]] || err "empty installation token in GitHub response"
+
+case "$cmd" in
+  push-main)
+    git push "https://x-access-token:${TOKEN}@github.com/${repo}.git" HEAD:main "$@"
+    ;;
+  gh)
+    GH_TOKEN="$TOKEN" gh "$@"
+    ;;
+  shell)
+    if [[ -t 2 ]]; then
+      printf 'release-bot: GH_TOKEN active for %s; exit shell to revoke\n' "$owner" >&2
+    fi
+    GH_TOKEN="$TOKEN" "${SHELL:-/bin/bash}"
+    ;;
+esac
