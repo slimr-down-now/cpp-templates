@@ -20,7 +20,7 @@ brew services start __NAME__
 brew services info __NAME__
 ```
 
-The HTTP server binds `0.0.0.0:__PORT__` (`http://127.0.0.1:__PORT__/mcp` locally) and logs to `$(brew --prefix)/var/log/__NAME__.log`.
+The HTTP server binds `127.0.0.1:__PORT__` (`http://127.0.0.1:__PORT__/mcp`; pass `--host 0.0.0.0` to expose) and logs to `$(brew --prefix)/var/log/__NAME__.log`.
 
 Add to `.mcp.json`:
 
