@@ -50,10 +50,6 @@ export function assertSemver(version: string, label = "Version"): string {
   return trimmed;
 }
 
-export function readVersion(versionPath: string): string {
-  return assertSemver(readFileSync(versionPath, "utf8"), versionPath);
-}
-
 export function sha256File(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }

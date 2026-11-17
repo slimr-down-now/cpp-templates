@@ -25,4 +25,4 @@ Each `templates/<name>/manifest.json` declares `{ "verbatim": [globs], "blocks":
 
 ## Changelog
 
-Once `CHANGELOG.md` is present, add one line under `## Unreleased` for every change (`Internal: ...` for internal changes).
+Once `CHANGELOG.md` is present, PRs leave it untouched (`release.yml` writes entries from squash-merge commits after merge).

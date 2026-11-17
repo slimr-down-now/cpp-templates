@@ -173,6 +173,17 @@ describe("release.ts", () => {
 
     const conflict = runRelease(fixture, ["plan", "--labels", "release:minor,release:major"]);
     expect(conflict.exitCode).not.toBe(0);
+
+    // GitHub remote without --labels fails when gh api exits non-zero (never silently defaults to patch)
+    runGit(fixture.repoDir, ["remote", "set-url", "origin", "https://github.com/example/demo-plan.git"]);
+    writeFileSync(
+      join(fixture.binDir, "gh"),
+      "#!/usr/bin/env bash\necho 'gh api error' >&2\nexit 1\n",
+    );
+    chmodSync(join(fixture.binDir, "gh"), 0o755);
+    const apiFail = runRelease(fixture, ["plan"]);
+    expect(apiFail.exitCode).not.toBe(0);
+    expect(apiFail.stderr.toString()).toContain("Failed to fetch PR labels");
   });
 
   test("publish formula (macos linux) batches squash commits into changelog, updates formula, tags, pushes, and is a no-op when already tagged", () => {

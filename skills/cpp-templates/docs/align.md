@@ -44,7 +44,7 @@ Delete legacy local-linking and release machinery:
 - Move XDG paths (`~/.local/share/...`, `~/.local/state/...`, `~/.config/...`) to `$(brew --prefix)/var/<name>` and `$(brew --prefix)/etc/<name>/` (always using the formula name, never a short XDG name); move secrets into env vars (`$(brew --prefix)/etc/<name>/env` for services)
 - Wire `src/log_file.hpp` and `--log-file`, compile `VERSION` into `--version` and Bugsink `release`, bind `0.0.0.0` by default on `http`, and wire the `PluginApp` env check with `--skip-checks`
 - Keep `just lint` green by disabling `.clang-tidy` checks with findings under a commented `Pending lint follow-ups` list with per-check counts; fix them later, one check per reviewed commit
-- Seed `CHANGELOG.md` with `## Unreleased` and a line for the port
+- Seed `CHANGELOG.md` with an empty `## Unreleased` heading (`release.yml` writes entries from squash-merge commits after merge)
 
 ## Update docs and verify snapshots
 

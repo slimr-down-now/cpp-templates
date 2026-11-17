@@ -99,7 +99,9 @@ async function fetchPrLabels(repoRoot: string, ownerRepo: string, sha: string): 
     .cwd(repoRoot)
     .nothrow()
     .quiet();
-  if (res.exitCode !== 0) return [];
+  if (res.exitCode !== 0) {
+    throw new Error(`Failed to fetch PR labels for ${sha}: ${res.stderr.toString().trim() || `exit ${res.exitCode}`}`);
+  }
   return res.stdout.toString().split("\n").map((s) => s.trim()).filter(Boolean);
 }
 
