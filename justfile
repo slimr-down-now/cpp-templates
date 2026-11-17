@@ -4,10 +4,6 @@ set positional-arguments
 _:
     @just --list
 
-# Check a repository against a template
-check template path:
-    bun scripts/check.ts "$1" "$2"
-
 # Format the justfile
 fmt:
     just --fmt --unstable

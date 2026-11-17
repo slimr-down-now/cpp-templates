@@ -3,6 +3,7 @@
 __DESC__
 
 <!-- cpp-templates:begin -->
+<!-- cpp-templates:commit __COMMIT__ -->
 ## Contributing
 
 Read the sections of [docs/contributing.md](docs/contributing.md) relevant to your change before editing.

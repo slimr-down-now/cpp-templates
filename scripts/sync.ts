@@ -11,7 +11,6 @@ const TEMPLATE_OWNED = new Set([
   "vcpkg-configuration.json",
   "README.md",
   "CHANGELOG.md",
-  "manifest.json",
 ]);
 
 function die(msg: string): never {

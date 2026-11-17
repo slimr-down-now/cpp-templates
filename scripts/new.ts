@@ -6,10 +6,26 @@ function die(msg: string): never {
   process.exit(1);
 }
 
+function resolveCommit(rootDir: string, override?: string): string {
+  if (override !== undefined) {
+    return override;
+  }
+  const proc = Bun.spawnSync(["git", "-C", rootDir, "rev-parse", "HEAD"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (proc.exitCode !== 0) {
+    return "unknown";
+  }
+  const sha = proc.stdout.toString("utf8").trim();
+  return sha.length > 0 ? sha : "unknown";
+}
+
 const args = process.argv.slice(2);
 const positional: string[] = [];
 let port = "10000";
 let desc: string | undefined;
+let commitOverride: string | undefined;
 
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
@@ -17,6 +33,8 @@ for (let i = 0; i < args.length; i++) {
     port = args[++i] ?? die("--port requires a value");
   } else if (arg === "--desc") {
     desc = args[++i] ?? die("--desc requires a value");
+  } else if (arg === "--commit") {
+    commitOverride = args[++i] ?? die("--commit requires a value");
   } else if (arg.startsWith("-")) {
     die(`unknown flag: ${arg}`);
   } else {
@@ -25,7 +43,7 @@ for (let i = 0; i < args.length; i++) {
 }
 
 if (positional.length !== 3) {
-  die("usage: bun scripts/new.ts <template> <name> <target-dir> [--port <port>] [--desc <desc>]");
+  die("usage: bun scripts/new.ts <template> <name> <target-dir> [--port <port>] [--desc <desc>] [--commit <sha>]");
 }
 
 const [templateName, name, targetArg] = positional;
@@ -36,10 +54,11 @@ const finalDesc = desc ?? name;
 
 const rootDir = process.env.CPP_TEMPLATES_ROOT ?? path.resolve(import.meta.dir, "..");
 const templateDir = path.join(rootDir, "templates", templateName);
-const manifestPath = path.join(templateDir, "manifest.json");
-if (!existsSync(manifestPath)) {
-  die(`template not found or missing manifest.json: ${manifestPath}`);
+const templateJustfile = path.join(templateDir, "justfile");
+if (!existsSync(templateJustfile)) {
+  die(`template not found or missing justfile: ${templateJustfile}`);
 }
+const commit = resolveCommit(rootDir, commitOverride);
 
 const targetDir = path.resolve(process.cwd(), targetArg);
 if (existsSync(targetDir)) {
@@ -61,13 +80,14 @@ const sub = (input: string): string =>
     .replaceAll("__NAME__", name)
     .replaceAll("__CLASS__", className)
     .replaceAll("__PORT__", port)
-    .replaceAll("__DESC__", finalDesc);
+    .replaceAll("__DESC__", finalDesc)
+    .replaceAll("__COMMIT__", commit);
 
 mkdirSync(targetDir, { recursive: true });
 
 const files = [...new Bun.Glob("**/*").scanSync({ cwd: templateDir, dot: true, onlyFiles: true })].sort();
 for (const rel of files) {
-  if (rel === "manifest.json" || rel.startsWith(".git/") || rel.startsWith("build/")) {
+  if (rel.startsWith(".git/") || rel.startsWith("build/")) {
     continue;
   }
   const srcPath = path.join(templateDir, rel);

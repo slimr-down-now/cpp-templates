@@ -33,21 +33,12 @@ function makeFixtureRoot(): string {
   writeFileSync(path.join(baseDir, "justfile"), "# base justfile should not overwrite template justfile\n");
   writeFileSync(
     path.join(baseDir, "AGENTS.md"),
-    "# Base\n\n<!-- cpp-templates:begin -->\n## Template rules v2\n- rule one\n<!-- cpp-templates:end -->\n",
+    "# Base\n\n<!-- cpp-templates:begin -->\n<!-- cpp-templates:commit __COMMIT__ -->\n## Template rules v2\n- rule one\n<!-- cpp-templates:end -->\n",
   );
 
   mkdirSync(path.join(tmplDir, "config"), { recursive: true });
   mkdirSync(path.join(tmplDir, "scripts"), { recursive: true });
   mkdirSync(path.join(tmplDir, "src"), { recursive: true });
-  writeFileSync(
-    path.join(tmplDir, "manifest.json"),
-    JSON.stringify({
-      verbatim: [".clang-format", "config/__NAME__.txt", "scripts/run.sh"],
-      blocks: ["AGENTS.md"],
-      seed: ["src/main.cpp"],
-      recipes: ["build", "hello"],
-    }),
-  );
   writeFileSync(path.join(tmplDir, ".clang-format"), "BasedOnStyle: LLVM\nIndentWidth: 4\n");
   writeFileSync(path.join(tmplDir, "config", "__NAME__.txt"), "name=__NAME__\ndesc=__DESC__\n");
   writeFileSync(path.join(tmplDir, "scripts", "run.sh"), "#!/usr/bin/env bash\necho __NAME__\n");
@@ -55,7 +46,7 @@ function makeFixtureRoot(): string {
   writeFileSync(path.join(tmplDir, "src", "main.cpp"), "// seed __NAME__ __PORT__\n");
   writeFileSync(
     path.join(tmplDir, "AGENTS.md"),
-    "# Repo notes\n\n<!-- cpp-templates:begin -->\n## Template rules v2\n- rule one\n<!-- cpp-templates:end -->\n\nKeep me.\n",
+    "# Repo notes\n\n<!-- cpp-templates:begin -->\n<!-- cpp-templates:commit __COMMIT__ -->\n## Template rules v2\n- rule one\n<!-- cpp-templates:end -->\n\nKeep me.\n",
   );
   writeFileSync(
     path.join(tmplDir, "justfile"),
@@ -78,16 +69,16 @@ function makeFixtureRoot(): string {
 }
 
 describe("cpp-templates tooling", () => {
-  test("new renders fixture with substitutions, mode preservation, and non-empty guard", () => {
+  test("new renders fixture with substitutions, mode preservation, non-empty guard, and non-git commit fallback", () => {
     const root = makeFixtureRoot();
     try {
       const target = path.join(root, "out", "demo-app");
       const res = runScript("new.ts", ["fixture", "demo-app", target, "--port", "10042", "--desc", "Demo App"], root);
       expect(res.exitCode).toBe(0);
-      expect(existsSync(path.join(target, "manifest.json"))).toBe(false);
       expect(readFileSync(path.join(target, "config", "demo-app.txt"), "utf8")).toBe("name=demo-app\ndesc=Demo App\n");
       expect(readFileSync(path.join(target, "src", "main.cpp"), "utf8")).toBe("// seed demo-app 10042\n");
       expect(readFileSync(path.join(target, ".clang-format"), "utf8")).toBe("BasedOnStyle: LLVM\nIndentWidth: 4\n");
+      expect(readFileSync(path.join(target, "AGENTS.md"), "utf8")).toContain("<!-- cpp-templates:commit unknown -->");
       expect((statSync(path.join(target, "scripts", "run.sh")).mode & 0o111) !== 0).toBe(true);
 
       const nonEmpty = runScript("new.ts", ["fixture", "demo-app", target], root);
@@ -97,70 +88,39 @@ describe("cpp-templates tooling", () => {
     }
   });
 
-  test("check passes on rendered tree, seed edits, extra recipes, var edits, and just --fmt", () => {
+  test("new substitutes --commit override and resolves git HEAD when rootDir is a git repo", () => {
     const root = makeFixtureRoot();
     try {
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target, "--port", "10042"], root).exitCode).toBe(0);
-      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
+      const overrideTarget = path.join(root, "out", "override-app");
+      const overrideRes = runScript("new.ts", ["fixture", "override-app", overrideTarget, "--commit", "deadbeef1234"], root);
+      expect(overrideRes.exitCode).toBe(0);
+      expect(readFileSync(path.join(overrideTarget, "AGENTS.md"), "utf8")).toContain("<!-- cpp-templates:commit deadbeef1234 -->");
 
-      writeFileSync(path.join(target, "src", "main.cpp"), "// customized seed\n");
-      const justPath = path.join(target, "justfile");
-      writeFileSync(
-        justPath,
-        readFileSync(justPath, "utf8").replace("10042", "10099") + "\n# Repo-specific recipe\nextra:\n    echo ok\n",
-      );
-      const fmtProc = Bun.spawnSync(["just", "--fmt", "--unstable", "--justfile", justPath], { stdout: "pipe", stderr: "pipe" });
-      expect(fmtProc.exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", root, "init", "-q"]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", root, "config", "user.email", "test@example.com"]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", root, "config", "user.name", "Test"]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", root, "add", "."]).exitCode).toBe(0);
+      expect(Bun.spawnSync(["git", "-C", root, "commit", "-q", "-m", "init"]).exitCode).toBe(0);
+      const headSha = Bun.spawnSync(["git", "-C", root, "rev-parse", "HEAD"], { stdout: "pipe" }).stdout.toString("utf8").trim();
+      expect(headSha).toMatch(/^[0-9a-f]{40}$/);
 
-      const clean = runScript("check.ts", ["fixture", target], root);
-      expect(clean.exitCode).toBe(0);
+      const gitTarget = path.join(root, "out", "git-app");
+      const gitRes = runScript("new.ts", ["fixture", "git-app", gitTarget], root);
+      expect(gitRes.exitCode).toBe(0);
+      expect(readFileSync(path.join(gitTarget, "AGENTS.md"), "utf8")).toContain(`<!-- cpp-templates:commit ${headSha} -->`);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("check fails with diff on verbatim, block, and recipe mutations", () => {
+  test("new validates template existence via justfile", () => {
     const root = makeFixtureRoot();
     try {
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-
-      // Verbatim dotfile mutation
-      writeFileSync(path.join(target, ".clang-format"), "BasedOnStyle: Google\n");
-      let res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain(".clang-format");
-
-      // Missing verbatim file
-      rmSync(path.join(target, "config", "demo-app.txt"));
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("missing verbatim file");
-
-      // Block mutation and missing marker
-      writeFileSync(path.join(target, "AGENTS.md"), "# Repo notes\n\n<!-- cpp-templates:begin -->\nchanged\n<!-- cpp-templates:end -->\n");
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("block mismatch");
-
-      writeFileSync(path.join(target, "AGENTS.md"), "# Repo notes\nno markers\n");
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("block error");
-
-      // Recipe body/doc mutation and missing recipe
-      const justPath = path.join(target, "justfile");
-      const origJust = readFileSync(justPath, "utf8");
-      writeFileSync(justPath, origJust.replace("# Say hello", "# Changed doc").replace("hello {{formula}}", "bye {{formula}}"));
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("recipe mismatch for 'hello'");
-
-      writeFileSync(justPath, 'formula := "demo-app"\nbuild:\n    echo ok\n');
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("missing recipe");
+      rmSync(path.join(root, "templates", "fixture", "justfile"));
+      const target = path.join(root, "out", "missing-justfile");
+      const res = runScript("new.ts", ["fixture", "demo-app", target], root);
+      expect(res.exitCode).not.toBe(0);
+      expect(res.stderr).toContain("justfile");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -193,20 +153,12 @@ describe("cpp-templates tooling", () => {
     }
   });
 
-  test("derives __CLASS__ from __NAME__ in new and check", () => {
+  test("derives __CLASS__ from __NAME__ in new", () => {
     const root = makeFixtureRoot();
     try {
       const tmplDir = path.join(root, "templates", "fixture");
       mkdirSync(path.join(tmplDir, "Formula"), { recursive: true });
       writeFileSync(path.join(tmplDir, "Formula", "__NAME__.rb"), "class __CLASS__ < Formula\nend\n");
-      const manifest = JSON.parse(readFileSync(path.join(tmplDir, "manifest.json"), "utf8")) as {
-        verbatim: string[];
-        blocks: string[];
-        seed: string[];
-        recipes: string[];
-      };
-      manifest.verbatim.push("Formula/__NAME__.rb");
-      writeFileSync(path.join(tmplDir, "manifest.json"), JSON.stringify(manifest));
 
       for (const [pkg, expectedClass] of [
         ["gdocsmith-mcp", "GdocsmithMcp"],
@@ -219,14 +171,13 @@ describe("cpp-templates tooling", () => {
         expect(readFileSync(path.join(target, "Formula", `${pkg}.rb`), "utf8")).toBe(
           `class ${expectedClass} < Formula\nend\n`,
         );
-        expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
 
-  test("ignores inline block markers in prose during sync and check", () => {
+  test("ignores inline block markers in prose during sync", () => {
     const root = makeFixtureRoot();
     try {
       const block = [
@@ -242,161 +193,8 @@ describe("cpp-templates tooling", () => {
 
       expect(runScript("sync.ts", [], root).exitCode).toBe(0);
       expect(runScript("sync.ts", ["--check"], root).exitCode).toBe(0);
-
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   });
-
-  test("enforces template-owned assignments and settings while ignoring per-repo vars", () => {
-    const root = makeFixtureRoot();
-    try {
-      const tmplJust = path.join(root, "templates", "fixture", "justfile");
-      const baseJust = [
-        'set shell := ["bash", "-eu", "-o", "pipefail", "-c"]',
-        "set positional-arguments",
-        "",
-        'formula := "__NAME__"',
-        'platforms := "macos linux"',
-        'llvm := env("LLVM_BIN", "/opt/homebrew/opt/llvm@23/bin")',
-        "",
-        "build:",
-        '    echo "building {{formula}}"',
-        "",
-        "hello:",
-        '    echo "hello {{formula}}"',
-        "",
-      ].join("\n");
-      writeFileSync(tmplJust, baseJust);
-
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
-
-      // Mutating per-repo var `platforms` stays clean
-      const targetJust = path.join(target, "justfile");
-      const origTarget = readFileSync(targetJust, "utf8");
-      writeFileSync(targetJust, origTarget.replace('platforms := "macos linux"', 'platforms := "macos"'));
-      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
-
-      // Mutating template-owned `llvm` fails naming `llvm`
-      writeFileSync(targetJust, origTarget.replace("llvm@23", "llvm@22"));
-      let res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("llvm");
-
-      // Mutating `set shell` fails naming `shell`
-      writeFileSync(targetJust, origTarget.replace('"-eu", "-o", "pipefail", ', ""));
-      res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(1);
-      expect(res.stderr).toContain("shell");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test("skips verbatim files and recipes listed in check_skip while printing skips", () => {
-    const root = makeFixtureRoot();
-    try {
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-
-      rmSync(path.join(target, "config", "demo-app.txt"));
-      const justPath = path.join(target, "justfile");
-      const origJust = readFileSync(justPath, "utf8");
-      writeFileSync(
-        justPath,
-        `check_skip := "config/* hello"\n${origJust.replace("# Say hello\nhello:\n    echo \"hello {{formula}} at {{endpoint}}\"", "# Custom hello\nhello:\n    echo custom")}`,
-      );
-
-      const res = runScript("check.ts", ["fixture", target], root);
-      expect(res.exitCode).toBe(0);
-      expect(res.stdout).toContain("skip (check_skip): config/demo-app.txt");
-      expect(res.stdout).toContain("skip (check_skip): hello");
-
-      // Unskipped mismatch still fails
-      writeFileSync(path.join(target, ".clang-format"), "BasedOnStyle: Google\n");
-      const failRes = runScript("check.ts", ["fixture", target], root);
-      expect(failRes.exitCode).toBe(1);
-      expect(failRes.stderr).toContain(".clang-format");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test("enforces -Wl,-exported_symbols_list,/dev/null in CMakeLists.txt when template has one", () => {
-    const root = makeFixtureRoot();
-    try {
-      writeFileSync(
-        path.join(root, "templates", "fixture", "CMakeLists.txt"),
-        "target_link_options(app_options INTERFACE -Wl,-exported_symbols_list,/dev/null)\n",
-      );
-      const target = path.join(root, "out", "demo-app");
-      expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-
-      writeFileSync(
-        path.join(target, "CMakeLists.txt"),
-        "target_link_options(app_options INTERFACE -Wl,-exported_symbols_list,/dev/null)\n",
-      );
-      expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
-
-      writeFileSync(path.join(target, "CMakeLists.txt"), "add_executable(demo-app main.cpp)\n");
-      const missingFlag = runScript("check.ts", ["fixture", target], root);
-      expect(missingFlag.exitCode).toBe(1);
-      expect(missingFlag.stderr).toContain("-Wl,-exported_symbols_list,/dev/null");
-
-      rmSync(path.join(target, "CMakeLists.txt"));
-      const missingFile = runScript("check.ts", ["fixture", target], root);
-      expect(missingFile.exitCode).toBe(1);
-      expect(missingFile.stderr).toContain("missing CMakeLists.txt");
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  if (process.platform === "darwin") {
-    test(
-      "verifies otool -L allowlist and empty nm -gU on built darwin executables",
-      () => {
-        const root = makeFixtureRoot();
-        try {
-          const target = path.join(root, "out", "demo-app");
-          expect(runScript("new.ts", ["fixture", "demo-app", target], root).exitCode).toBe(0);
-
-          const binDir = path.join(target, "build", "bin");
-          mkdirSync(binDir, { recursive: true });
-          const srcC = path.join(root, "probe.c");
-          const binPath = path.join(binDir, "demo-app");
-
-          // Clean C binary with -Wl,-exported_symbols_list,/dev/null passes
-          writeFileSync(srcC, "void exported_sym(void) {}\nint main(void) { return 0; }\n");
-          expect(
-            Bun.spawnSync(["/usr/bin/clang", srcC, "-Wl,-exported_symbols_list,/dev/null", "-o", binPath]).exitCode,
-          ).toBe(0);
-          expect(runScript("check.ts", ["fixture", target], root).exitCode).toBe(0);
-
-          // Missing -Wl,-exported_symbols_list,/dev/null fails nm -gU
-          expect(Bun.spawnSync(["/usr/bin/clang", srcC, "-o", binPath]).exitCode).toBe(0);
-          const nmFail = runScript("check.ts", ["fixture", target], root);
-          expect(nmFail.exitCode).toBe(1);
-          expect(nmFail.stderr).toContain("exports symbols");
-
-          // Dynamic /usr/lib/libc++.1.dylib fails otool -L allowlist
-          expect(
-            Bun.spawnSync(["/usr/bin/clang", srcC, "-lc++", "-Wl,-exported_symbols_list,/dev/null", "-o", binPath])
-              .exitCode,
-          ).toBe(0);
-          const otoolFail = runScript("check.ts", ["fixture", target], root);
-          expect(otoolFail.exitCode).toBe(1);
-          expect(otoolFail.stderr).toContain("unexpected dylibs");
-        } finally {
-          rmSync(root, { recursive: true, force: true });
-        }
-      },
-      { timeout: 30_000 },
-    );
-  }
 });
