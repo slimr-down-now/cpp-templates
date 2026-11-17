@@ -53,7 +53,7 @@ Iterate with `just test "<case>"` (Debug build with ASan + UBSan, `BUGSINK_DSN="
 
 ## Changelog
 
-Add one line under `## Unreleased` in `CHANGELOG.md` for every change (use `Internal: ...` for internal changes).
+PRs touch no release files (`CHANGELOG.md`, `VERSION`, `versions/`). Write the PR title (and optional body) as the changelog entry; `release.yml` generates `CHANGELOG.md` from squash-merge commits after merge.
 
 ## Paths, env vars, and README
 

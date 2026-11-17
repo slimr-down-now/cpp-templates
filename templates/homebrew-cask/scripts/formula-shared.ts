@@ -287,65 +287,32 @@ export function bumpFromLabels(labels: string[]): Bump {
   return "patch";
 }
 
-export function extractChangelogNotes(content: string, version: string): string {
-  const normalized = content.replaceAll("\r\n", "\n");
-  const escaped = version.replaceAll(".", "\\.");
-  const heading = new RegExp(`^## v${escaped}(?:\\s+-\\s+.*)?$`, "m");
-  const match = normalized.match(heading);
-  if (!match || match.index === undefined) {
-    throw new Error(`CHANGELOG.md does not contain a ## v${version} section.`);
-  }
-  const body = normalized.slice(match.index + match[0].length).split(/^## /m)[0].trim();
-  if (!body) {
-    throw new Error(`CHANGELOG.md section ## v${version} is empty.`);
-  }
-  return `${body}\n`;
+export function maxBump(a: Bump, b: Bump): Bump {
+  if (a === "major" || b === "major") return "major";
+  if (a === "minor" || b === "minor") return "minor";
+  return "patch";
 }
 
-export function promoteChangelog(content: string, version: string, date: string): { changelog: string; notes: string } {
+export function formatCommitEntries(commits: Array<{ subject: string; body: string }>): string {
+  return commits
+    .map(({ subject, body }) => {
+      const bodyLines = body
+        .replaceAll("\r\n", "\n")
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.trim().length > 0 && !/^(?:Co-authored-by|Signed-off-by):/i.test(line.trim()));
+      if (bodyLines.length === 0) return `- ${subject}`;
+      return `- ${subject}\n${bodyLines.map((line) => `  ${line}`).join("\n")}`;
+    })
+    .join("\n");
+}
+
+export function insertChangelogSection(content: string, version: string, date: string, body: string): string {
   const normalized = content.replaceAll("\r\n", "\n");
   const heading = /^## Unreleased[ \t]*$/gm;
   const matches = [...normalized.matchAll(heading)];
   if (matches.length !== 1) throw new Error("CHANGELOG.md must have exactly one ## Unreleased heading.");
-  const match = matches[0];
-  const body = normalized.slice(match.index + match[0].length).split(/^## /m)[0].trim();
-  if (!body) throw new Error("Add release notes under ## Unreleased before releasing.");
-  return {
-    changelog: normalized.replace(heading, `## Unreleased\n\n## v${version} - ${date}`),
-    notes: `${body}\n`,
-  };
-}
-
-export function retargetChangelog(content: string, fromVersion: string, toVersion: string, date: string): string {
-  const normalized = content.replaceAll("\r\n", "\n");
-  const unreleasedRe = /^## Unreleased[ \t]*$/gm;
-  const unreleasedMatches = [...normalized.matchAll(unreleasedRe)];
-  if (unreleasedMatches.length !== 1) throw new Error("CHANGELOG.md must have exactly one ## Unreleased heading.");
-
-  const escapedFrom = fromVersion.replaceAll(".", "\\.");
-  const fromRe = new RegExp(`^## v${escapedFrom}(?:\\s+-\\s+.*)?$`, "m");
-  const fromMatch = normalized.match(fromRe);
-  if (!fromMatch || fromMatch.index === undefined) {
-    return promoteChangelog(normalized, toVersion, date).changelog;
-  }
-
-  const fromStart = fromMatch.index;
-  const afterFromHeading = fromStart + fromMatch[0].length;
-  const nextSectionRel = normalized.slice(afterFromHeading).search(/^## /m);
-  const fromEnd = nextSectionRel === -1 ? normalized.length : afterFromHeading + nextSectionRel;
-  const fromBody = normalized.slice(afterFromHeading, fromEnd).trim();
-  const withoutFrom = `${normalized.slice(0, fromStart)}${normalized.slice(fromEnd)}`.replace(/\n{3,}/g, "\n\n");
-
-  const uMatch = [...withoutFrom.matchAll(/^## Unreleased[ \t]*$/gm)][0]!;
-  const afterU = uMatch.index! + uMatch[0].length;
-  const nextAfterURel = withoutFrom.slice(afterU).search(/^## /m);
-  const uEnd = nextAfterURel === -1 ? withoutFrom.length : afterU + nextAfterURel;
-  const uBody = withoutFrom.slice(afterU, uEnd).trim();
-
-  const combined = [uBody, fromBody].filter(Boolean).join("\n");
-  if (!combined) throw new Error("Add release notes under ## Unreleased before releasing.");
-
-  const tail = withoutFrom.slice(uEnd).replace(/^\n+/, "");
-  const suffix = tail ? `\n${tail}` : "";
-  return `${withoutFrom.slice(0, uMatch.index!)}## Unreleased\n\n## v${toVersion} - ${date}\n\n${combined}\n${suffix}`;
+  const notes = body.trim();
+  if (!notes) throw new Error("Release notes must not be empty.");
+  return normalized.replace(heading, `## Unreleased\n\n## v${version} - ${date}\n\n${notes}`);
 }

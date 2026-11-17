@@ -36,16 +36,16 @@ Remove the symlink (or `unset VCPKG_OVERLAY_PORTS`) to build against the release
 
 ## Rules
 
-- Never push directly to `main`; all changes land through pull requests.
+- Never push directly to `main`; all changes land through squash-merged pull requests.
+- PRs touch no release files (`VERSION`, `CHANGELOG.md`, `versions/`, `Formula/*.rb`, `Casks/*.rb`).
+- Write the PR title (plus optional body) as the changelog entry; squash-merge turns it into one commit on `main`.
 - Sanitize everything (no secrets, tokens, DSNs, or personal data in commits, logs, or docs).
 - Run `just test` (ASan + UBSan) and `just lint` before opening or updating a PR.
-- Add an entry under `## Unreleased` in `CHANGELOG.md` for every non-docs-only change (`Internal: ...` for internal changes).
 
 ## PR, CI, and release flow
 
 - Every PR runs `test.yml`: a `gate` job skips macOS/Linux builds on docs-only PRs, and a single `ci` summary job gates merge.
-- Non-docs PRs automatically prepare the version bump (`patch` by default, or `release:minor` / `release:major` PR labels) and promote `## Unreleased` in `CHANGELOG.md` (plus `vcpkg x-add-version` for libraries). Agents must ask before adding `release:minor` or `release:major` labels.
-- Merging to `main` triggers `release.yml`, which tags `vX.Y.Z`, publishes the GitHub Release, and (for formulas/casks) updates `Formula/*.rb` or `Casks/*.rb`. Docs-only merges release nothing.
+- Merging to `main` triggers `release.yml` (one release at a time). It collects squash commits since the last tag (skipping docs-only ranges), picks the bump from merged PR labels (`patch` default, or `release:minor` / `release:major`; agents must ask before adding labels), writes `VERSION`/`vcpkg.json`, `CHANGELOG.md` (and `vcpkg x-add-version` for libraries), commits as the GitHub App, tags `vX.Y.Z`, and publishes the GitHub Release (plus assets and `Formula/*.rb` / `Casks/*.rb` updates).
 - Pre-releases are a known option (tag/channel), not currently built.
 
 ## Dependency bumps

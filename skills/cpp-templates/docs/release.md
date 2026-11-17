@@ -8,11 +8,10 @@ Outline
 
 ## Release workflow
 
-Releases run automatically on merge to `main`:
+Releases run automatically after squash-merge to `main` (one release at a time):
 
-1. Add release notes under `## Unreleased` in `CHANGELOG.md` on the PR branch.
-2. On `pull_request`, `test.yml` runs `scripts/release.ts prep` (`patch` by default, or `release:minor` / `release:major` PR labels) to bump `VERSION` or `ports/<name>/vcpkg.json`, promote `CHANGELOG.md` to `## vX.Y.Z - <date>`, and run `vcpkg x-add-version` for libraries. Docs-only PRs skip builds and release nothing.
-3. On merge to `main`, `release.yml` tags `vX.Y.Z`, runs `gh release create`, and (for formulas/casks) updates `Formula/*.rb` or `Casks/*.rb`.
+1. Open a PR without touching `VERSION`, `CHANGELOG.md`, or `versions/`. Write the PR title (plus optional body) as the changelog entry.
+2. On merge to `main`, `release.yml` runs `scripts/release.ts plan` over commits since the last tag (skipping docs-only ranges or already-tagged `HEAD`), picks the bump from merged PR labels (`patch` default, or `release:minor` / `release:major`), writes `VERSION` / `ports/<name>/vcpkg.json`, `CHANGELOG.md` (and `vcpkg x-add-version` for libraries), commits as the GitHub App, tags `vX.Y.Z`, and runs `gh release create` (plus assets and `Formula/*.rb` / `Casks/*.rb` updates).
 
 ## App assets and formulas
 

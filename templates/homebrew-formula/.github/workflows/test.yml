@@ -3,7 +3,6 @@ on:
   workflow_dispatch:
   workflow_call:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
 concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
@@ -46,46 +45,9 @@ jobs:
             echo "run_tests=true" >> "$GITHUB_OUTPUT"
           fi
 
-  bump:
-    needs: gate
-    if: github.event_name == 'pull_request' && needs.gate.outputs.run_tests == 'true' && github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/create-github-app-token@v2
-        id: app-token
-        with:
-          app-id: ${{ secrets.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-          token: ${{ steps.app-token.outputs.token }}
-      - uses: ./.github/actions/setup
-        if: hashFiles('ports/*/vcpkg.json') != ''
-      - uses: extractions/setup-just@v3
-        if: hashFiles('ports/*/vcpkg.json') == ''
-      - uses: oven-sh/setup-bun@v2
-        if: hashFiles('ports/*/vcpkg.json') == ''
-      - name: Configure git author
-        run: |
-          git config user.name "bdombro-release-bot[bot]"
-          git config user.email "bdombro-release-bot[bot]@users.noreply.github.com"
-      - name: Prepare PR release bump
-        env:
-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
-        run: |
-          before="$(git rev-parse HEAD)"
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          bun scripts/release.ts prep --base "origin/${{ github.base_ref }}" --labels "$PR_LABELS" --commit
-          after="$(git rev-parse HEAD)"
-          if [ "$before" != "$after" ]; then
-            git push origin "HEAD:refs/heads/${{ github.head_ref }}"
-          fi
-
   test:
-    needs: [gate, bump]
-    if: needs.gate.outputs.run_tests == 'true' && (needs.bump.result == 'success' || needs.bump.result == 'skipped')
+    needs: gate
+    if: needs.gate.outputs.run_tests == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -102,7 +64,7 @@ jobs:
         run: just test-mcp
 
   ci:
-    needs: [gate, bump, test]
+    needs: [gate, test]
     if: always() && !cancelled()
     runs-on: ubuntu-24.04
     steps:
@@ -110,10 +72,6 @@ jobs:
         run: |
           if [ "${{ needs.gate.result }}" != "success" ]; then
             echo "::error::gate=${{ needs.gate.result }}"
-            exit 1
-          fi
-          if [ "${{ needs.bump.result }}" != "success" ] && [ "${{ needs.bump.result }}" != "skipped" ]; then
-            echo "::error::bump=${{ needs.bump.result }}"
             exit 1
           fi
           if [ "${{ needs.test.result }}" != "success" ] && [ "${{ needs.test.result }}" != "skipped" ]; then
