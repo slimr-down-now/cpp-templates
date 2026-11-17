@@ -49,7 +49,6 @@ inline slimr::ServeApp make_app() {
     slimr::ServeApp app("__NAME__", std::string(APP_VERSION_STR));
     app.description = "__DESC__";
     app.apiVersion = API_VERSION;
-    app.remote = "unix:" + default_socket_path();
     app.setBugsink("", "BUGSINK_DSN",
                    std::string("__NAME__@") + std::string(APP_VERSION_STR));
 

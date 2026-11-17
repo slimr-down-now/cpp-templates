@@ -20,9 +20,8 @@
 
 namespace app::test {
 
-TEST_CASE("app - status returns typed versions") {
+TEST_CASE("app - status rejects direct CLI invocation") {
     auto app = app::make_app();
-    CHECK_EQ(app.remote, "unix:" + app::default_socket_path());
     std::vector<std::string> args{"__NAME__", "status"};
     std::vector<char *> argv;
     for (auto &a : args) {
@@ -32,32 +31,21 @@ TEST_CASE("app - status returns typed versions") {
     std::ostringstream err;
     const int rc = slimr::run_cli(app, static_cast<int>(argv.size()),
                                   argv.data(), out, err);
-    CHECK_EQ(rc, 0);
-    CHECK(out.str().find("\"name\":\"__NAME__\"") != std::string::npos);
-    CHECK(out.str().find("\"apiVersion\":1") != std::string::npos);
+    CHECK_NE(rc, 0);
 }
 
-TEST_CASE("app - CLI relays status to a running server") {
+TEST_CASE("app - HTTP POST /status returns typed versions") {
     auto app = app::make_app();
     slimr::ServeHttpServer server(app, {.host = "127.0.0.1", .port = 0});
     std::string startErr;
     REQUIRE(server.start(&startErr));
 
-    std::vector<std::string> args{"__NAME__", "--remote", server.baseUrl(),
-                                  "status"};
-    std::vector<char *> argv;
-    for (auto &a : args) {
-        argv.push_back(a.data());
-    }
-    const slimr::ToolDef *def = app.findTool("status");
-    REQUIRE(def != nullptr);
-    std::ostringstream out;
-    std::ostringstream err;
-    const int rc = slimr::run_cli_relay(
-        app, *def, slimr::json_obj(), slimr::RequestContext{},
-        static_cast<int>(argv.size()), argv.data(), out, err);
-    CHECK_EQ(rc, 0);
-    CHECK(out.str().find("\"apiVersion\":1") != std::string::npos);
+    httplib::Client cli(server.baseUrl());
+    auto res = cli.Post("/status", "{}", "application/json");
+    REQUIRE(res);
+    CHECK_EQ(res->status, 200);
+    CHECK(res->body.find("\"name\":\"__NAME__\"") != std::string::npos);
+    CHECK(res->body.find("\"apiVersion\":1") != std::string::npos);
     server.stop();
 }
 
@@ -145,22 +133,10 @@ TEST_CASE("app - serve runs onServe, relays status over temp socket, and stops o
     REQUIRE(healthy);
     CHECK(onServeStarted.load());
 
-    const slimr::ToolDef *def = app.findTool("status");
-    REQUIRE(def != nullptr);
-    const std::string remote = "unix:" + sockPath;
-    std::vector<std::string> relayArgs{"__NAME__", "--remote", remote, "status"};
-    std::vector<char *> relayArgv;
-    for (auto &a : relayArgs) {
-        relayArgv.push_back(a.data());
-    }
-    std::ostringstream relayOut;
-    std::ostringstream relayErr;
-    const int relayRc = slimr::run_cli_relay(
-        app, *def, slimr::json_obj(), slimr::RequestContext{},
-        static_cast<int>(relayArgv.size()), relayArgv.data(), relayOut,
-        relayErr);
-    CHECK_EQ(relayRc, 0);
-    CHECK(relayOut.str().find("\"apiVersion\":1") != std::string::npos);
+    auto res = cli.Post("/status", "{}", "application/json");
+    REQUIRE(res);
+    CHECK_EQ(res->status, 200);
+    CHECK(res->body.find("\"apiVersion\":1") != std::string::npos);
 
     guard.stop();
     CHECK_EQ(serveRc.load(), 0);

@@ -166,8 +166,8 @@ Run the server and call a tool locally (defaulting to the Unix socket, or opt in
 
 ```bash
 ./build/bin/__NAME__ serve --socket ./build/__NAME__.sock
-./build/bin/__NAME__ --remote unix:./build/__NAME__.sock status
+curl --unix-socket ./build/__NAME__.sock -X POST http://localhost/status -d '{}'
 
 ./build/bin/__NAME__ serve --port __PORT__
-./build/bin/__NAME__ --remote http://127.0.0.1:__PORT__ status
+curl -X POST http://127.0.0.1:__PORT__/status -d '{}'
 ```

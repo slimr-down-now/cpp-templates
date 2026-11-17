@@ -23,7 +23,6 @@ struct HelloInput {
 
 inline slimr::PluginApp make_app() {
     slimr::PluginApp app("__NAME__", std::string(APP_VERSION_STR));
-    app.allowCliTools = true;
     app.description = "__DESC__";
     app.instructions =
         "Read `__NAME__://guide` before calling tools for usage details.";

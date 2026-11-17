@@ -28,15 +28,13 @@ brew services info __NAME__
 
 The service runs `__NAME__ serve`, listening on `$(brew --prefix)/var/__NAME__/__NAME__.sock` (`--socket` overrides it; pass `--port __PORT__` and optional `--host` to opt into TCP). It logs to `$(brew --prefix)/var/log/__NAME__.log` with 10 MB rotation (keeping one `.1` backup).
 
-CLI tool calls relay to the running service over the default Unix socket (`--remote unix:<path>` or `--remote http://127.0.0.1:__PORT__` override it):
+Call tools over the Unix socket (or `http://127.0.0.1:__PORT__/<tool>` when TCP is enabled):
 
 ```bash
-__NAME__ status
-__NAME__ --remote unix:/path/to/__NAME__.sock status
-__NAME__ --remote http://127.0.0.1:__PORT__ status
+curl --unix-socket "$(brew --prefix)/var/__NAME__/__NAME__.sock" -X POST http://localhost/status -d '{}'
 ```
 
-Each tool is also `POST /<tool>` on the server (JSON body in, result JSON out). A relayed call exits 69 when the service is down. The server rejects clients built for a newer tool API version; restart the service after upgrading.
+Each tool is `POST /<tool>` on the server (raw JSON body in, result JSON out).
 
 ## Environment Variables
 
@@ -44,7 +42,6 @@ Services load `$(brew --prefix)/etc/__NAME__/env` (`chmod 600`) before starting.
 
 | Name | Required | Purpose |
 | --- | --- | --- |
-| `<NAME>_REMOTE` | No | Default relay target for CLI tool calls (`unix:<path>` or `http://...`); `<NAME>` is the app name upper-cased with `-` as `_` |
 | `BUGSINK_DSN` | No | Report errors to Bugsink |
 
 ## Development

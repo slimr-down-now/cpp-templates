@@ -12,9 +12,8 @@
 #include <utility>
 #include <vector>
 
-/* Entry point (all surfaces share app::make_app):
- *   __NAME__ serve [--socket <path>] [--host <addr>] [--port <n>] [--log-file <path>]
- *   __NAME__ [--remote <unix:path|http://...>] <tool> ['{"arg":"val"}']
+/* Entry point (shares app::make_app):
+ *   __NAME__ serve [--socket <path>] [--host <addr>] [--port <n>] [--skip-checks] [--log-file <path>]
  */
 int main(int argc, char *argv[]) try {
     std::optional<std::string> logFile;
